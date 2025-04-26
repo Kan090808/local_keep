@@ -107,7 +107,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 Text(
                   widget.isFirstTime
                       ? 'This password will be used to encrypt your notes'
-                      : 'Unlock your secure notes',
+                      : 'Unlock your Local Keep',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),

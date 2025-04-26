@@ -96,7 +96,7 @@ class _NotesScreenState extends State<NotesScreen> {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Secure Notes'),
+        title: const Text('Local Keep'),
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         actions: [
           IconButton(
