@@ -19,13 +19,28 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  late FocusNode _passwordFocusNode; // Declare FocusNode
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _passwordFocusNode = FocusNode(); // Initialize FocusNode
+    // Request focus after the first frame is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+       // Check if mounted before requesting focus
+       if (mounted) {
+         _passwordFocusNode.requestFocus();
+       }
+    });
+  }
 
   @override
   void dispose() {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _passwordFocusNode.dispose(); // Dispose FocusNode
     super.dispose();
   }
 
@@ -113,6 +128,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 32),
                 TextFormField(
                   controller: _passwordController,
+                  focusNode: _passwordFocusNode, // Assign FocusNode
                   decoration: const InputDecoration(
                     labelText: 'Password',
                     border: OutlineInputBorder(),
@@ -173,86 +189,11 @@ class _AuthScreenState extends State<AuthScreen> {
                         : Text(widget.isFirstTime ? 'Create Password' : 'Unlock'),
                   ),
                 ),
-                if (!widget.isFirstTime) ...[
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _showResetConfirmationDialog,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Reset'),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  void _showResetConfirmationDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Reset'),
-        content: const Text('Are you sure you want to delete all notes and reset your password?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              _resetAllData();
-            },
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _resetAllData() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    print('Starting reset process...');
-
-    try {
-      await authProvider.deleteAllNotes();
-      // await authProvider.resetPassword();
-      
-      if (mounted) {
-        print('Successfully reset password and deleted all notes');
-        setState(() {
-          _errorMessage = null;
-        });
-        print('Navigating to first-time setup screen...');
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const AuthScreen(isFirstTime: true))
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Failed to reset data: ${e.toString()}';
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
   }
 }
