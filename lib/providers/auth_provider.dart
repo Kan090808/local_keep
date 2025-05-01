@@ -51,6 +51,34 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // Change password
+  Future<bool> changePassword(String oldPassword, String newPassword) async {
+    try {
+      // Verify old password first
+      final isValid = await CryptoService.verifyPassword(oldPassword);
+      if (!isValid) {
+        return false;
+      }
+
+      // Re-encrypt all notes with new password
+      await DatabaseService.reEncryptNotes(oldPassword, newPassword);
+      
+      // Setup new password in CryptoService
+      await CryptoService.setupPassword(newPassword);
+      
+      // Update current state
+      _currentPassword = newPassword;
+      _isAuthenticated = true;
+      DatabaseService.setPassword(newPassword);
+      
+      notifyListeners();
+      return true;
+    } catch (e) {
+      print('Error changing password: $e');
+      return false;
+    }
+  }
+
   // Reset the password and clear all data
   Future<void> resetPassword() async {
     try {

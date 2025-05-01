@@ -134,4 +134,40 @@ class DatabaseService {
     final db = await database;
     await db.delete('notes');
   }
+
+  // Re-encrypt all notes with a new password
+  static Future<void> reEncryptNotes(String oldPassword, String newPassword) async {
+    final db = await database;
+    final maps = await db.query('notes');
+    
+    // First verify old password by trying to decrypt a note
+    if (maps.isNotEmpty) {
+      final firstNote = maps.first;
+      final encryptedContent = firstNote['content'] as String;
+      try {
+        await CryptoService.decrypt(encryptedContent, oldPassword);
+      } catch (e) {
+        throw Exception('Invalid old password');
+      }
+    }
+    
+    // Re-encrypt all notes with new password
+    for (var map in maps) {
+      final encryptedContent = map['content'] as String;
+      // Decrypt with old password
+      final decryptedContent = await CryptoService.decrypt(encryptedContent, oldPassword);
+      // Encrypt with new password
+      final reEncryptedContent = await CryptoService.encrypt(decryptedContent, newPassword);
+      
+      await db.update(
+        'notes',
+        {'content': reEncryptedContent},
+        where: 'id = ?',
+        whereArgs: [map['id']],
+      );
+    }
+    
+    // Update current password
+    _currentPassword = newPassword;
+  }
 }

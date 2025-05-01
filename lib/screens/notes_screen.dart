@@ -6,6 +6,7 @@ import 'package:local_keep/providers/auth_provider.dart';
 import 'package:local_keep/providers/note_provider.dart';
 import 'package:local_keep/screens/auth_screen.dart';
 import 'package:local_keep/screens/note_editor_screen.dart';
+import 'package:local_keep/screens/settings_screen.dart'; // Import the new settings screen
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({super.key});
@@ -40,6 +41,12 @@ class _NotesScreenState extends State<NotesScreen> {
     authProvider.lockApp();
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const AuthScreen())
+    );
+  }
+
+  void _goToSettings() { // New method to navigate to settings
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
     );
   }
 
@@ -98,9 +105,9 @@ class _NotesScreenState extends State<NotesScreen> {
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         actions: [
           IconButton(
-            icon: const Icon(Icons.lock),
-            onPressed: _lockApp,
-            tooltip: 'Lock App',
+            icon: const Icon(Icons.settings), // Change icon to settings
+            onPressed: _goToSettings,         // Change onPressed to navigate to settings
+            tooltip: 'Settings',              // Update tooltip
           ),
         ],
       ),
