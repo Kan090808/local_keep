@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart'; // Import the intl package
 import 'package:local_keep/models/note.dart';
 import 'package:local_keep/providers/note_provider.dart';
 
 class NoteEditorScreen extends StatefulWidget {
-  final String title;
   final Note? note;
 
   const NoteEditorScreen({
     super.key,
-    required this.title,
     this.note,
   });
 
@@ -18,45 +17,39 @@ class NoteEditorScreen extends StatefulWidget {
 }
 
 class _NoteEditorScreenState extends State<NoteEditorScreen> {
-  final _titleController = TextEditingController();
   final _contentController = TextEditingController();
+  final _focusNode = FocusNode();
   bool _isEdited = false;
 
   @override
   void initState() {
     super.initState();
     if (widget.note != null) {
-      _titleController.text = widget.note!.title;
       _contentController.text = widget.note!.content;
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        FocusScope.of(context).requestFocus(_focusNode);
+      });
     }
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
     _contentController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
   Future<void> _saveNote() async {
-    final title = _titleController.text.trim();
     final content = _contentController.text.trim();
-
-    if (title.isEmpty && content.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Note is empty'))
-      );
-      return;
-    }
-
     final noteProvider = Provider.of<NoteProvider>(context, listen: false);
 
     if (widget.note == null) {
       // Create new note
-      await noteProvider.addNote(title, content);
+      await noteProvider.addNote(content);
     } else {
       // Update existing note
-      await noteProvider.updateNote(widget.note!, title, content);
+      await noteProvider.updateNote(widget.note!, content);
     }
 
     if (mounted) {
@@ -95,7 +88,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.title),
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           actions: [
             IconButton(
@@ -108,26 +100,26 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         body: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, // Align date to the start
             children: [
-              TextField(
-                controller: _titleController,
-                decoration: const InputDecoration(
-                  hintText: 'Title',
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 8),
+              if (widget.note != null) // Only show date for existing notes
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  child: Text(
+                    'Edited: ${widget.note!.formattedDate}', // Format and display the date
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-                onChanged: (value) => setState(() => _isEdited = true),
-              ),
-              const Divider(),
               Expanded(
                 child: TextField(
                   controller: _contentController,
+                  focusNode: _focusNode,
                   decoration: const InputDecoration(
                     hintText: 'Note content',
+                    hintStyle: TextStyle(color: Colors.grey),
                     border: InputBorder.none,
                   ),
                   style: const TextStyle(fontSize: 16),

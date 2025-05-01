@@ -18,18 +18,16 @@ class NoteProvider with ChangeNotifier {
     }
   }
   
-  Future<void> addNote(String title, String content) async {
-    final newNote = Note.create(title: title, content: content);
+  Future<void> addNote(String content) async {
+    final newNote = Note.create(content: content);
     final id = await DatabaseService.insertNote(newNote);
     final updatedNote = newNote.copyWith(id: id);
     _notes.insert(0, updatedNote);
-    print('Note added: ${updatedNote.title}');
     notifyListeners();
   }
   
-  Future<void> updateNote(Note note, String title, String content) async {
+  Future<void> updateNote(Note note, String content) async {
     final updatedNote = note.copyWith(
-      title: title,
       content: content,
       updatedAt: DateTime.now(),
     );
@@ -60,6 +58,24 @@ class NoteProvider with ChangeNotifier {
   
   void clearNotes() {
     _notes = [];
+    notifyListeners();
+  }
+
+  Future<void> reorderNotes(int oldIndex, int newIndex) async {
+    // Adjust index if item is moved downwards
+    if (newIndex > oldIndex) {
+      newIndex -= 1;
+    }
+
+    final Note item = _notes.removeAt(oldIndex);
+    _notes.insert(newIndex, item);
+
+    // TODO: Update the order in your persistent storage (database)
+    // You might need to add an 'orderIndex' field to your Note model and database table
+    // and update the indices for the affected notes.
+    // Example (pseudo-code):
+    // await DBHelper.updateNoteOrder(_notes);
+
     notifyListeners();
   }
 }

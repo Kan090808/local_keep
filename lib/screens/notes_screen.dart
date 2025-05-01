@@ -47,7 +47,6 @@ class _NotesScreenState extends State<NotesScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const NoteEditorScreen(
-          title: 'New Note',
         )
       )
     ).then((_) => _loadNotes());
@@ -57,7 +56,6 @@ class _NotesScreenState extends State<NotesScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => NoteEditorScreen(
-          title: 'Edit Note',
           note: note,
         )
       )
@@ -146,18 +144,6 @@ class _NotesScreenState extends State<NotesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (note.title.isNotEmpty) ...[
-                Text(
-                  note.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const Divider(),
-              ],
               if (note.content.isNotEmpty)
                 Text(
                   note.content,
@@ -165,25 +151,7 @@ class _NotesScreenState extends State<NotesScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
               const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    note.formattedDate,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    onPressed: () => _confirmDelete(note),
-                    color: Colors.red[300],
-                  ),
-                ],
-              ),
+              
             ],
           ),
         ),

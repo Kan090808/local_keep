@@ -26,7 +26,6 @@ class DatabaseService {
         await db.execute('''
           CREATE TABLE notes(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT,
             content TEXT,
             created_at TEXT,
             updated_at TEXT
@@ -53,8 +52,7 @@ class DatabaseService {
     final db = await database;
     final noteMap = note.toMap();
     
-    // Encrypt title and content
-    noteMap['title'] = await CryptoService.encrypt(note.title, _currentPassword!);
+    // Encrypt content
     noteMap['content'] = await CryptoService.encrypt(note.content, _currentPassword!);
     
     final result = await db.insert('notes', noteMap);
@@ -88,15 +86,12 @@ class DatabaseService {
     final maps = await db.query('notes', orderBy: 'updated_at DESC');
     final notes = <Note>[];
     for (var map in maps) {
-      // Decrypt title and content
-      final encryptedTitle = map['title'] as String;
+      // Decrypt content
       final encryptedContent = map['content'] as String;
-      final decryptedTitle = await CryptoService.decrypt(encryptedTitle, _currentPassword!);
       final decryptedContent = await CryptoService.decrypt(encryptedContent, _currentPassword!);
       
       notes.add(Note.fromMap({
         ...map,
-        'title': decryptedTitle,
         'content': decryptedContent,
       }));
     }
@@ -113,8 +108,7 @@ class DatabaseService {
     final db = await database;
     final noteMap = note.toMap();
     
-    // Encrypt title and content
-    noteMap['title'] = await CryptoService.encrypt(note.title, _currentPassword!);
+    // Encrypt content
     noteMap['content'] = await CryptoService.encrypt(note.content, _currentPassword!);
     
     return await db.update(

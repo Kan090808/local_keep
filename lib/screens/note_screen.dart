@@ -47,7 +47,7 @@ class _NotesScreenState extends State<NotesScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const NoteEditorScreen(
-          title: 'New Note',
+
         )
       )
     ).then((_) => _loadNotes());
@@ -57,7 +57,6 @@ class _NotesScreenState extends State<NotesScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => NoteEditorScreen(
-          title: 'Edit Note',
           note: note,
         )
       )
@@ -146,18 +145,6 @@ class _NotesScreenState extends State<NotesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (note.title.isNotEmpty) ...[
-                Text(
-                  note.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const Divider(),
-              ],
               if (note.content.isNotEmpty)
                 Text(
                   note.content,
