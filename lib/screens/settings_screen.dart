@@ -10,7 +10,7 @@ class SettingsScreen extends StatelessWidget {
 
   // TODO: Replace with your actual URLs
   final String _githubUrl = 'https://github.com/Kan090808/local_keep';
-  final String _donateUrl = 'https://www.buymeacoffee.com/your_username';
+  final String _donateUrl = 'https://buymeacoffee.com/jaydenkan';
 
   // Function to launch URLs
   Future<void> _launchUrl(BuildContext context, String urlString) async {
