@@ -35,7 +35,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.inactive) {
       final currentContext = navigatorKey.currentContext;
       if (currentContext != null) {
         Provider.of<AuthProvider>(currentContext, listen: false).lockApp();
