@@ -33,6 +33,49 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     }
   }
 
+  Future<void> _confirmDelete() async {
+    // Ensure there's a note to delete
+    if (widget.note == null) return;
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Confirm Delete'),
+          content: const Text('Are you sure you want to delete this note? This action cannot be undone.'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && mounted) {
+      final noteProvider = Provider.of<NoteProvider>(context, listen: false);
+      try {
+        await noteProvider.deleteNote(widget.note!.id); // Assuming note.id is available and is a String
+        if (mounted) {
+          Navigator.of(context).pop(); // Go back to NotesScreen
+        }
+      } catch (e) {
+        // Handle or show error if deletion fails
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error deleting note: ${e.toString()}'))
+          );
+        }
+      }
+    }
+  }
+
   @override
   void dispose() {
     _contentController.dispose();
@@ -90,6 +133,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         appBar: AppBar(
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           actions: [
+            if (widget.note != null)
+              IconButton(
+                icon: const Icon(Icons.delete),
+                onPressed: _confirmDelete,
+                tooltip: 'Delete',
+              ),
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: _saveNote,
