@@ -35,16 +35,16 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.inactive) {
-      final currentContext = navigatorKey.currentContext;
-      if (currentContext != null) {
-        Provider.of<AuthProvider>(currentContext, listen: false).lockApp();
-      }
-      navigatorKey.currentState?.pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-        (route) => false, // Removes all previous routes
-      );
-    }
+    // if (state == AppLifecycleState.inactive) {
+    //   final currentContext = navigatorKey.currentContext;
+    //   if (currentContext != null) {
+    //     Provider.of<AuthProvider>(currentContext, listen: false).lockApp();
+    //   }
+    //   navigatorKey.currentState?.pushAndRemoveUntil(
+    //     MaterialPageRoute(builder: (_) => const AuthScreen()),
+    //     (route) => false, // Removes all previous routes
+    //   );
+    // }
     print('App lifecycle state: $state');
   }
 
