@@ -61,7 +61,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: !_isEdited,
-      onPopInvokedWithResult: (didPop, result) async {
+      onPopInvoked: (didPop) async {
         if (didPop) return;
         final shouldPop = await showDialog<bool>(
           context: context,
