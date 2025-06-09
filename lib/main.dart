@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:local_keep/screens/auth_screen.dart';
@@ -20,6 +23,8 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+  Timer? _lockTimer;
+
   @override
   void initState() {
     super.initState();
@@ -32,19 +37,30 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  void _triggerLock() {
+    final currentContext = navigatorKey.currentContext;
+    if (currentContext != null) {
+      Provider.of<AuthProvider>(currentContext, listen: false).lockApp();
+    }
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (route) => false,
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    // if (state == AppLifecycleState.inactive) {
-    //   final currentContext = navigatorKey.currentContext;
-    //   if (currentContext != null) {
-    //     Provider.of<AuthProvider>(currentContext, listen: false).lockApp();
-    //   }
-    //   navigatorKey.currentState?.pushAndRemoveUntil(
-    //     MaterialPageRoute(builder: (_) => const AuthScreen()),
-    //     (route) => false, // Removes all previous routes
-    //   );
-    // }
+    if (state == AppLifecycleState.paused) {
+      if (Platform.isAndroid || Platform.isIOS) {
+        _triggerLock();
+      } else if (Platform.isWindows || Platform.isMacOS) {
+        _lockTimer?.cancel();
+        _lockTimer = Timer(const Duration(minutes: 1), _triggerLock);
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      _lockTimer?.cancel();
+    }
     print('App lifecycle state: $state');
   }
 
