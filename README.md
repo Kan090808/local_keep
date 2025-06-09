@@ -7,6 +7,9 @@ A fully local encrypted note-taking app that prioritizes your privacy and securi
 - 💻 100% local storage - your data never leaves your device
 - 📱 Cross-platform support (iOS & Android)
 - 🔒 End-to-end encryption using PBKDF2 key derivation and AES-256 with IV
+- 🔐 Automatic locking when the app goes to the background on Android and iOS.
+  On Windows and macOS the app locks after 1 minute in the background or when
+  the desktop is locked.
 
 
 Copyright (c) 2025 Jayden Kan
