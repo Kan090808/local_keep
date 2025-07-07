@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart'; // Import the intl package
 import 'package:local_keep/models/note.dart';
 import 'package:local_keep/providers/note_provider.dart';
 
 class NoteEditorScreen extends StatefulWidget {
   final Note? note;
 
-  const NoteEditorScreen({
-    super.key,
-    this.note,
-  });
+  const NoteEditorScreen({super.key, this.note});
 
   @override
   State<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -57,31 +54,77 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     }
   }
 
+  void _copyNote() {
+    final content = _contentController.text;
+    Clipboard.setData(ClipboardData(text: content));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Note content copied to clipboard')),
+    );
+  }
+
+  void _deleteNote() {
+    if (widget.note != null) {
+      showDialog(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              title: const Text('Delete Note'),
+              content: const Text('Are you sure you want to delete this note?'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Provider.of<NoteProvider>(
+                      context,
+                      listen: false,
+                    ).deleteNote(widget.note!.id!);
+                    Navigator.of(ctx).pop();
+                    Navigator.of(context).pop(); // Close editor screen
+                  },
+                  style: TextButton.styleFrom(foregroundColor: Colors.red),
+                  child: const Text('Delete'),
+                ),
+              ],
+            ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: !_isEdited,
       onPopInvoked: (didPop) async {
         if (didPop) return;
-        final shouldPop = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Discard changes?'),
-            content: const Text('You have unsaved changes. Do you want to discard them?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Keep editing'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: TextButton.styleFrom(foregroundColor: Colors.red),
-                child: const Text('Discard'),
-              ),
-            ],
-          ),
-        ) ?? false;
-        
+        final shouldPop =
+            await showDialog<bool>(
+              context: context,
+              builder:
+                  (context) => AlertDialog(
+                    title: const Text('Discard changes?'),
+                    content: const Text(
+                      'You have unsaved changes. Do you want to discard them?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Keep editing'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red,
+                        ),
+                        child: const Text('Discard'),
+                      ),
+                    ],
+                  ),
+            ) ??
+            false;
+
         if (shouldPop && context.mounted) {
           Navigator.of(context).pop();
         }
@@ -91,26 +134,35 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           actions: [
             IconButton(
+              icon: const Icon(Icons.copy),
+              tooltip: 'Copy',
+              onPressed: _copyNote,
+            ),
+            if (widget.note != null)
+              IconButton(
+                icon: const Icon(Icons.delete),
+                tooltip: 'Delete',
+                onPressed: _deleteNote,
+              ),
+            IconButton(
               icon: const Icon(Icons.save),
-              onPressed: _saveNote,
               tooltip: 'Save',
+              onPressed: _saveNote,
             ),
           ],
         ),
         body: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start, // Align date to the start
+            crossAxisAlignment:
+                CrossAxisAlignment.start, // Align date to the start
             children: [
               if (widget.note != null) // Only show date for existing notes
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8.0),
                   child: Text(
                     'Edited: ${widget.note!.formattedDate}', // Format and display the date
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
                   ),
                 ),
               Expanded(
