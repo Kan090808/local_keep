@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:local_keep/models/note.dart';
-import 'package:local_keep/providers/auth_provider.dart';
 import 'package:local_keep/providers/note_provider.dart';
-import 'package:local_keep/screens/auth_screen.dart';
 import 'package:local_keep/screens/note_editor_screen.dart';
 import 'package:local_keep/screens/settings_screen.dart'; // Import the new settings screen
 
@@ -17,6 +15,7 @@ class NotesScreen extends StatefulWidget {
 
 class _NotesScreenState extends State<NotesScreen> {
   bool _isLoading = false;
+  bool _isReorderMode = false;
 
   @override
   void initState() {
@@ -36,13 +35,6 @@ class _NotesScreenState extends State<NotesScreen> {
     });
   }
 
-  void _lockApp() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    authProvider.lockApp();
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const AuthScreen())
-    );
-  }
 
   void _goToSettings() { // New method to navigate to settings
     Navigator.of(context).push(
@@ -69,30 +61,37 @@ class _NotesScreenState extends State<NotesScreen> {
     ).then((_) => _loadNotes());
   }
 
-  void _confirmDelete(Note note) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Note'),
-        content: const Text('Are you sure you want to delete this note?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+
+  void _enterReorderMode() {
+    setState(() {
+      _isReorderMode = true;
+    });
+  }
+
+  void _exitReorderMode() {
+    setState(() {
+      _isReorderMode = false;
+    });
+  }
+
+  void _onReorder(int oldIndex, int newIndex) async {
+    try {
+      await Provider.of<NoteProvider>(context, listen: false)
+          .reorderNotes(oldIndex, newIndex);
+    } catch (e) {
+      print('Error reordering notes: $e');
+      // Show error message to user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to reorder notes: ${e.toString()}'),
+            backgroundColor: Colors.red,
           ),
-          TextButton(
-            onPressed: () {
-              Provider.of<NoteProvider>(context, listen: false)
-                  .deleteNote(note.id!);
-              Navigator.of(ctx).pop();
-              _loadNotes();
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
+        );
+        // Reload notes to revert UI changes
+        _loadNotes();
+      }
+    }
   }
 
   @override
@@ -101,14 +100,27 @@ class _NotesScreenState extends State<NotesScreen> {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Local Keep'),
+        title: Text(_isReorderMode ? 'Reorder Notes' : 'Local Keep'),
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings), // Change icon to settings
-            onPressed: _goToSettings,         // Change onPressed to navigate to settings
-            tooltip: 'Settings',              // Update tooltip
-          ),
+          if (_isReorderMode)
+            IconButton(
+              icon: const Icon(Icons.check),
+              onPressed: _exitReorderMode,
+              tooltip: 'Done',
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.reorder),
+              onPressed: _enterReorderMode,
+              tooltip: 'Reorder Notes',
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: _goToSettings,
+              tooltip: 'Settings',
+            ),
+          ],
         ],
       ),
       body: _isLoading
@@ -119,33 +131,81 @@ class _NotesScreenState extends State<NotesScreen> {
                 )
               : Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: MasonryGridView.count(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    itemCount: notes.length,
-                    itemBuilder: (context, index) {
-                      final note = notes[index];
-                      return _buildNoteCard(note);
-                    },
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _isReorderMode
+                        ? _buildReorderView(notes)
+                        : _buildGridView(notes),
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _createNote,
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        tooltip: 'Add Note',
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: _isReorderMode
+          ? null
+          : FloatingActionButton(
+              onPressed: _createNote,
+              backgroundColor: Colors.teal,
+              foregroundColor: Colors.white,
+              tooltip: 'Add Note',
+              child: const Icon(Icons.add),
+            ),
     );
   }
 
-  Widget _buildNoteCard(Note note) {
+  Widget _buildGridView(List<Note> notes) {
+    return MasonryGridView.count(
+      crossAxisCount: 2,
+      mainAxisSpacing: 8,
+      crossAxisSpacing: 8,
+      itemCount: notes.length,
+      itemBuilder: (context, index) {
+        final note = notes[index];
+        return _buildGridNoteCard(note, index);
+      },
+    );
+  }
+
+  Widget _buildReorderView(List<Note> notes) {
+    return Column(
+      children: [
+        // Instructions
+        Container(
+          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            color: Colors.teal.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.teal, size: 20),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Drag notes to reorder them. Tap "Done" when finished.',
+                  style: TextStyle(color: Colors.teal, fontSize: 14),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Reorderable list
+        Expanded(
+          child: ReorderableListView(
+            onReorder: _onReorder,
+            children: notes.asMap().entries.map((entry) {
+              return _buildReorderNoteCard(entry.value, entry.key);
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGridNoteCard(Note note, int index) {
     return Card(
+      key: ValueKey(note.id),
       elevation: 2,
       child: InkWell(
         onTap: () => _editNote(note),
-        onLongPress: () => _confirmDelete(note),
         child: Padding(
           padding: const EdgeInsets.all(12.0),
           child: Column(
@@ -156,11 +216,43 @@ class _NotesScreenState extends State<NotesScreen> {
                   note.content,
                   maxLines: 8,
                   overflow: TextOverflow.ellipsis,
+                )
+              else
+                const Text(
+                  'Empty Note',
+                  style: TextStyle(
+                    color: Colors.grey,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
               const SizedBox(height: 8),
-              
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReorderNoteCard(Note note, int index) {
+    return Card(
+      key: ValueKey(note.id),
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: const Icon(Icons.drag_handle, color: Colors.grey),
+        title: Text(
+          note.content.isNotEmpty ? note.content : 'Empty Note',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: note.content.isNotEmpty ? null : Colors.grey,
+            fontStyle: note.content.isNotEmpty ? null : FontStyle.italic,
+          ),
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.edit),
+          onPressed: () => _editNote(note),
+          tooltip: 'Edit Note',
         ),
       ),
     );

@@ -92,8 +92,8 @@ class CryptoService {
   
   // Encrypt data using the password
   static Future<String> encrypt(String data, String password) async {
-    if (data == null || data.isEmpty) {
-      return ''; // Return an empty string if data is null or empty
+    if (data.isEmpty) {
+      return ''; // Return an empty string if data is empty
     }
     
     final salt = await _getOrCreateSalt();
@@ -110,8 +110,8 @@ class CryptoService {
   
   // Decrypt data using the password
   static Future<String> decrypt(String encryptedData, String password) async {
-    if (encryptedData == null || encryptedData.isEmpty) {
-      return ''; // Return an empty string if data is null or empty
+    if (encryptedData.isEmpty) {
+      return ''; // Return an empty string if data is empty
     }
 
     final salt = await _getOrCreateSalt();

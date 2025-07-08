@@ -9,6 +9,8 @@ class NoteProvider with ChangeNotifier {
   
   Future<void> fetchNotes() async {
     try {
+      // Initialize note orders for migrated databases
+      await DatabaseService.initializeNoteOrders();
       _notes = await DatabaseService.getNotes();
       notifyListeners();
     } catch (e) {
@@ -19,24 +21,34 @@ class NoteProvider with ChangeNotifier {
   }
   
   Future<void> addNote(String content) async {
-    final newNote = Note.create(content: content);
-    final id = await DatabaseService.insertNote(newNote);
-    final updatedNote = newNote.copyWith(id: id);
-    _notes.insert(0, updatedNote);
-    notifyListeners();
+    try {
+      final newNote = Note.create(content: content);
+      final id = await DatabaseService.insertNote(newNote);
+      final updatedNote = newNote.copyWith(id: id);
+      _notes.insert(0, updatedNote);
+      notifyListeners();
+    } catch (e) {
+      print('Error adding note: $e');
+      rethrow;
+    }
   }
   
   Future<void> updateNote(Note note, String content) async {
-    final updatedNote = note.copyWith(
-      content: content,
-      updatedAt: DateTime.now(),
-    );
-    await DatabaseService.updateNote(updatedNote);
-    
-    final noteIndex = _notes.indexWhere((n) => n.id == note.id);
-    if (noteIndex >= 0) {
-      _notes[noteIndex] = updatedNote;
-      notifyListeners();
+    try {
+      final updatedNote = note.copyWith(
+        content: content,
+        updatedAt: DateTime.now(),
+      );
+      await DatabaseService.updateNote(updatedNote);
+      
+      final noteIndex = _notes.indexWhere((n) => n.id == note.id);
+      if (noteIndex >= 0) {
+        _notes[noteIndex] = updatedNote;
+        notifyListeners();
+      }
+    } catch (e) {
+      print('Error updating note: $e');
+      rethrow;
     }
   }
   
@@ -67,15 +79,22 @@ class NoteProvider with ChangeNotifier {
       newIndex -= 1;
     }
 
-    final Note item = _notes.removeAt(oldIndex);
-    _notes.insert(newIndex, item);
+    // Store original state in case we need to revert
+    final originalNotes = List<Note>.from(_notes);
+    
+    try {
+      final Note item = _notes.removeAt(oldIndex);
+      _notes.insert(newIndex, item);
 
-    // TODO: Update the order in your persistent storage (database)
-    // You might need to add an 'orderIndex' field to your Note model and database table
-    // and update the indices for the affected notes.
-    // Example (pseudo-code):
-    // await DBHelper.updateNoteOrder(_notes);
+      // Update the order in persistent storage
+      await DatabaseService.updateNoteOrders(_notes);
 
-    notifyListeners();
+      notifyListeners();
+    } catch (e) {
+      // Revert to original state on error
+      _notes = originalNotes;
+      notifyListeners();
+      rethrow;
+    }
   }
 }

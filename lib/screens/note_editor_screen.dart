@@ -41,16 +41,28 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final content = _contentController.text.trim();
     final noteProvider = Provider.of<NoteProvider>(context, listen: false);
 
-    if (widget.note == null) {
-      // Create new note
-      await noteProvider.addNote(content);
-    } else {
-      // Update existing note
-      await noteProvider.updateNote(widget.note!, content);
-    }
+    try {
+      if (widget.note == null) {
+        // Create new note
+        await noteProvider.addNote(content);
+      } else {
+        // Update existing note
+        await noteProvider.updateNote(widget.note!, content);
+      }
 
-    if (mounted) {
-      Navigator.of(context).pop();
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      print('Error saving note: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save note: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -97,7 +109,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: !_isEdited,
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldPop =
             await showDialog<bool>(
