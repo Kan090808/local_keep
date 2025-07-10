@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:local_keep/models/note.dart';
 import 'package:local_keep/providers/note_provider.dart';
 import 'package:local_keep/screens/note_editor_screen.dart';
@@ -59,6 +59,33 @@ class _NotesScreenState extends State<NotesScreen> {
         )
       )
     ).then((_) => _loadNotes());
+  }
+
+  Future<void> _copyNote(Note note) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: note.content));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Note copied to clipboard'),
+            backgroundColor: Colors.teal,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to copy note: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
 
@@ -135,7 +162,7 @@ class _NotesScreenState extends State<NotesScreen> {
                     duration: const Duration(milliseconds: 300),
                     child: _isReorderMode
                         ? _buildReorderView(notes)
-                        : _buildGridView(notes),
+                        : _buildListView(notes),
                   ),
                 ),
       floatingActionButton: _isReorderMode
@@ -150,15 +177,12 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 
-  Widget _buildGridView(List<Note> notes) {
-    return MasonryGridView.count(
-      crossAxisCount: 2,
-      mainAxisSpacing: 8,
-      crossAxisSpacing: 8,
+  Widget _buildListView(List<Note> notes) {
+    return ListView.builder(
       itemCount: notes.length,
       itemBuilder: (context, index) {
         final note = notes[index];
-        return _buildGridNoteCard(note, index);
+        return _buildListNoteCard(note, index);
       },
     );
   }
@@ -200,32 +224,60 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 
-  Widget _buildGridNoteCard(Note note, int index) {
+  Widget _buildListNoteCard(Note note, int index) {
     return Card(
       key: ValueKey(note.id),
       elevation: 2,
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
       child: InkWell(
         onTap: () => _editNote(note),
         child: Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (note.content.isNotEmpty)
-                Text(
-                  note.content,
-                  maxLines: 8,
-                  overflow: TextOverflow.ellipsis,
-                )
-              else
-                const Text(
-                  'Empty Note',
-                  style: TextStyle(
-                    color: Colors.grey,
-                    fontStyle: FontStyle.italic,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (note.content.isNotEmpty)
+                          Text(
+                            note.content,
+                            maxLines: 4,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 16),
+                          )
+                        else
+                          const Text(
+                            'Empty Note',
+                            style: TextStyle(
+                              color: Colors.grey,
+                              fontStyle: FontStyle.italic,
+                              fontSize: 16,
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        Text(
+                          note.formattedDate,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              const SizedBox(height: 8),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 20),
+                    onPressed: () => _copyNote(note),
+                    tooltip: 'Copy note',
+                    color: Colors.teal,
+                  ),
+                ],
+              ),
             ],
           ),
         ),

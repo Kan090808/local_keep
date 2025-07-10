@@ -135,7 +135,7 @@ class DatabaseService {
     }
     
     final db = await database;
-    final maps = await db.query('notes', orderBy: 'order_index DESC');
+    final maps = await db.query('notes', orderBy: 'updated_at DESC');
     final notes = <Note>[];
     for (var map in maps) {
       // Decrypt content
