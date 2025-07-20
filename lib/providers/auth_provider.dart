@@ -5,7 +5,7 @@ import 'package:local_keep/services/migration_service.dart';
 
 class AuthProvider with ChangeNotifier {
   bool _isAuthenticated = false;
-  String? _currentPassword;
+  String? _encryptedPassword; // Store encrypted password instead of plain text
 
   bool get isAuthenticated => _isAuthenticated;
 
@@ -18,9 +18,18 @@ class AuthProvider with ChangeNotifier {
   Future<bool> createPassword(String password) async {
     try {
       await CryptoService.setupPassword(password);
-      _currentPassword = password;
+
+      // Create encrypted version for memory storage
+      _encryptedPassword = await CryptoService.createMemoryEncryptedPassword(
+        password,
+      );
+
       _isAuthenticated = true;
-      HiveDatabaseService.setPassword(password);
+      await HiveDatabaseService.setPassword(password);
+
+      // Clear the plain text password from local scope
+      password = ''; // This helps with garbage collection
+
       notifyListeners();
       return true;
     } catch (e) {
@@ -32,9 +41,13 @@ class AuthProvider with ChangeNotifier {
   Future<bool> verifyPassword(String password) async {
     final isValid = await CryptoService.verifyPassword(password);
     if (isValid) {
-      _currentPassword = password;
+      // Create encrypted version for memory storage
+      _encryptedPassword = await CryptoService.createMemoryEncryptedPassword(
+        password,
+      );
+
       _isAuthenticated = true;
-      HiveDatabaseService.setPassword(password);
+      await HiveDatabaseService.setPassword(password);
 
       // Check if migration is needed and perform it
       try {
@@ -47,6 +60,9 @@ class AuthProvider with ChangeNotifier {
         print('Migration failed: $e');
         // Continue anyway, as the user can still use the app
       }
+
+      // Clear the plain text password from local scope
+      password = ''; // This helps with garbage collection
 
       notifyListeners();
     }
@@ -80,10 +96,17 @@ class AuthProvider with ChangeNotifier {
       // Setup new password in CryptoService
       await CryptoService.setupPassword(newPassword);
 
-      // Update current state
-      _currentPassword = newPassword;
+      // Create encrypted version for memory storage
+      _encryptedPassword = await CryptoService.createMemoryEncryptedPassword(
+        newPassword,
+      );
+
       _isAuthenticated = true;
-      HiveDatabaseService.setPassword(newPassword);
+      await HiveDatabaseService.setPassword(newPassword);
+
+      // Clear the plain text passwords from local scope
+      oldPassword = '';
+      newPassword = '';
 
       notifyListeners();
       return true;
@@ -97,8 +120,8 @@ class AuthProvider with ChangeNotifier {
   Future<void> resetPassword() async {
     try {
       print('Resetting password...');
-      // Clear the current password
-      _currentPassword = null;
+      // Clear the encrypted password
+      _encryptedPassword = null;
       _isAuthenticated = false;
 
       // Reset the password in the CryptoService
@@ -113,9 +136,19 @@ class AuthProvider with ChangeNotifier {
   // Lock the app
   void lockApp() {
     _isAuthenticated = false;
-    _currentPassword = null;
+    _encryptedPassword = null;
     notifyListeners();
   }
 
-  String? get currentPassword => _currentPassword;
+  // Get current password (decrypted from memory-encrypted version)
+  // Use with caution - only when absolutely necessary
+  String? get currentPassword {
+    if (_encryptedPassword == null) return null;
+    try {
+      return CryptoService.decryptMemoryEncryptedPassword(_encryptedPassword!);
+    } catch (e) {
+      print('Error decrypting password: $e');
+      return null;
+    }
+  }
 }

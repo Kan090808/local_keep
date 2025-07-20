@@ -9,7 +9,8 @@ import 'package:local_keep/services/note_object_pool.dart';
 
 class HiveDatabaseService {
   static Box<Note>? _notesBox;
-  static String? _currentPassword;
+  static String?
+  _encryptedPassword; // Store encrypted password instead of plain text
   static const String _boxName = 'notes';
   static bool _isInitialized = false;
 
@@ -35,13 +36,14 @@ class HiveDatabaseService {
       return _notesBox!;
     }
 
-    if (_currentPassword == null) {
+    if (_encryptedPassword == null) {
       throw Exception('Password not set for database access');
     }
 
     try {
       // Use password for Hive encryption
-      final encryptionKey = _deriveEncryptionKey(_currentPassword!);
+      final currentPassword = _getCurrentPassword();
+      final encryptionKey = _deriveEncryptionKey(currentPassword);
       _notesBox = await Hive.openBox<Note>(
         _boxName,
         encryptionCipher: HiveAesCipher(encryptionKey),
@@ -54,17 +56,27 @@ class HiveDatabaseService {
     }
   }
 
-  // Set current password for cryptographic operations
-  static void setPassword(String password) {
-    _currentPassword = password;
+  // Set current password for cryptographic operations (store encrypted in memory)
+  static Future<void> setPassword(String password) async {
+    _encryptedPassword = await CryptoService.createMemoryEncryptedPassword(
+      password,
+    );
+  }
+
+  // Get the decrypted password when needed
+  static String _getCurrentPassword() {
+    if (_encryptedPassword == null) {
+      throw Exception('Password not set for database access');
+    }
+    return CryptoService.decryptMemoryEncryptedPassword(_encryptedPassword!);
   }
 
   // Check if the password is set
-  static bool get isPasswordSet => _currentPassword != null;
+  static bool get isPasswordSet => _encryptedPassword != null;
 
   // Insert a note with async encryption
   static Future<String> insertNote(Note note) async {
-    if (_currentPassword == null) {
+    if (_encryptedPassword == null) {
       throw Exception('Password not set for encryption');
     }
 
@@ -74,10 +86,11 @@ class HiveDatabaseService {
       // Generate a unique ID for the note
       final id = DateTime.now().millisecondsSinceEpoch.toString();
 
-      // Encrypt content using isolate for better performance
-      final encryptedContent = await EncryptionIsolateService.encryptAsync(
+      // Encrypt the note content before storing
+      final currentPassword = _getCurrentPassword();
+      final encryptedContent = await CryptoService.encrypt(
         note.content,
-        _currentPassword!,
+        currentPassword,
       );
 
       // Get the highest order_index efficiently
@@ -115,7 +128,7 @@ class HiveDatabaseService {
 
     final encryptedContent = await CryptoService.encrypt(
       note.content,
-      _currentPassword!,
+      _getCurrentPassword(),
     );
 
     int maxOrder = -1;
@@ -140,7 +153,7 @@ class HiveDatabaseService {
 
   // Get all notes with optimized performance using isolates for encryption
   static Future<List<Note>> getNotes() async {
-    if (_currentPassword == null) {
+    if (_encryptedPassword == null) {
       throw Exception('Password not set for decryption');
     }
 
@@ -173,7 +186,7 @@ class HiveDatabaseService {
       // Batch decrypt using isolate for better performance
       final decryptedContents = await EncryptionIsolateService.decryptBatch(
         encryptedContents,
-        _currentPassword!,
+        _getCurrentPassword(),
       );
 
       // Second pass: create note objects with decrypted content using object pool
@@ -216,7 +229,7 @@ class HiveDatabaseService {
       try {
         final decryptedContent = await CryptoService.decrypt(
           note.content,
-          _currentPassword!,
+          _getCurrentPassword(),
         );
 
         notes.add(
@@ -245,7 +258,7 @@ class HiveDatabaseService {
 
   // Update a note with async encryption
   static Future<int> updateNote(Note note) async {
-    if (_currentPassword == null) {
+    if (_encryptedPassword == null) {
       throw Exception('Password not set for encryption');
     }
 
@@ -259,7 +272,7 @@ class HiveDatabaseService {
       // Encrypt content using isolate for better performance
       final encryptedContent = await EncryptionIsolateService.encryptAsync(
         note.content,
-        _currentPassword!,
+        _getCurrentPassword(),
       );
 
       // Create updated note with encrypted content
@@ -286,7 +299,7 @@ class HiveDatabaseService {
 
     final encryptedContent = await CryptoService.encrypt(
       note.content,
-      _currentPassword!,
+      _getCurrentPassword(),
     );
 
     final updatedNote = Note(
@@ -431,7 +444,7 @@ class HiveDatabaseService {
       }
 
       // Update current password
-      _currentPassword = newPassword;
+      await setPassword(newPassword);
     } catch (e) {
       throw Exception('Error re-encrypting notes: $e');
     }
