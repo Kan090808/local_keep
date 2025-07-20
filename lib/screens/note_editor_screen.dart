@@ -157,12 +157,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               tooltip: 'Copy',
               onPressed: _copyNote,
             ),
-            if (widget.note != null)
+            if (widget.note != null) ...[
               IconButton(
                 icon: const Icon(Icons.delete),
                 tooltip: 'Delete',
                 onPressed: _deleteNote,
               ),
+            ],
             IconButton(
               icon: const Icon(Icons.save),
               tooltip: 'Save',
@@ -202,16 +203,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     // Enhanced change detection for better performance
                     final contentLength = value.length;
                     final lastSavedLength = _lastSavedContent.length;
-                    final hasSignificantChange = (lastSavedLength - contentLength).abs() > 3;
-                    final crossedWordBoundary = (contentLength ~/ 20) != (lastSavedLength ~/ 20);
-                    
+                    final hasSignificantChange =
+                        (lastSavedLength - contentLength).abs() > 3;
+                    final crossedWordBoundary =
+                        (contentLength ~/ 20) != (lastSavedLength ~/ 20);
+
                     // More intelligent edit state management
                     if (!_isEdited && (value != _lastSavedContent)) {
                       setState(() => _isEdited = true);
                     }
 
                     // Auto-save existing notes with smart debouncing
-                    if (widget.note != null && (hasSignificantChange || crossedWordBoundary)) {
+                    if (widget.note != null &&
+                        (hasSignificantChange || crossedWordBoundary)) {
                       final noteProvider = Provider.of<NoteProvider>(
                         context,
                         listen: false,

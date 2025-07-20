@@ -9,7 +9,6 @@ class NoteProvider with ChangeNotifier {
   List<Note> _notes = [];
   bool _isLoading = false;
   Timer? _debounceTimer;
-  Timer? _debounceReorderTimer;
 
   // Cache the last fetch time to avoid unnecessary database calls
   DateTime? _lastFetchTime;
@@ -231,48 +230,9 @@ class NoteProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> reorderNotes(int oldIndex, int newIndex) async {
-    // Adjust index if item is moved downwards
-    if (newIndex > oldIndex) {
-      newIndex -= 1;
-    }
-
-    // Store original state in case we need to revert
-    final originalNotes = List<Note>.from(_notes);
-
-    try {
-      // Update UI immediately
-      final Note item = _notes.removeAt(oldIndex);
-      _notes.insert(newIndex, item);
-      notifyListeners();
-
-      // Update the order in persistent storage with debouncing
-      _debounceReorderTimer?.cancel();
-      _debounceReorderTimer = Timer(
-        const Duration(milliseconds: 300),
-        () async {
-          try {
-            await HiveDatabaseService.updateNoteOrders(_notes);
-          } catch (e) {
-            // Revert on error
-            _notes = originalNotes;
-            notifyListeners();
-            rethrow;
-          }
-        },
-      );
-    } catch (e) {
-      // Revert to original state on error
-      _notes = originalNotes;
-      notifyListeners();
-      rethrow;
-    }
-  }
-
   @override
   void dispose() {
     _debounceTimer?.cancel();
-    _debounceReorderTimer?.cancel();
     super.dispose();
   }
 }

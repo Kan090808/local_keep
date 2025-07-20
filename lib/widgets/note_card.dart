@@ -27,7 +27,7 @@ class _NoteCardState extends State<NoteCard>
   @override
   Widget build(BuildContext context) {
     super.build(context); // Required for AutomaticKeepAliveClientMixin
-    
+
     return RepaintBoundary(
       child: Card(
         key: ValueKey(widget.note.id),
@@ -73,59 +73,24 @@ class _NoteCardState extends State<NoteCard>
                         ],
                       ),
                     ),
-                    if (widget.onCopy != null) ...[
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.copy, size: 20),
-                        onPressed: widget.onCopy,
-                        tooltip: 'Copy note',
-                        color: Colors.teal,
-                      ),
-                    ],
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.onCopy != null) ...[
+                          IconButton(
+                            icon: const Icon(Icons.copy, size: 20),
+                            onPressed: widget.onCopy,
+                            tooltip: 'Copy note',
+                            color: Colors.teal,
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class ReorderableNoteCard extends StatelessWidget {
-  final Note note;
-  final VoidCallback onEdit;
-  final int index;
-
-  const ReorderableNoteCard({
-    super.key,
-    required this.note,
-    required this.onEdit,
-    required this.index,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      key: ValueKey(note.id),
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: const Icon(Icons.drag_handle, color: Colors.grey),
-        title: Text(
-          note.content.isNotEmpty ? note.content : 'Empty Note',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: note.content.isNotEmpty ? null : Colors.grey,
-            fontStyle: note.content.isNotEmpty ? null : FontStyle.italic,
-          ),
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.edit),
-          onPressed: onEdit,
-          tooltip: 'Edit Note',
         ),
       ),
     );

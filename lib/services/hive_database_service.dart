@@ -205,12 +205,8 @@ class HiveDatabaseService {
         );
       }
 
-      // Sort by order_index, then by updated_at DESC
-      notes.sort((a, b) {
-        final orderComparison = a.orderIndex.compareTo(b.orderIndex);
-        if (orderComparison != 0) return orderComparison;
-        return b.updatedAt.compareTo(a.updatedAt);
-      });
+      // Sort by createdAt DESC (newest first)
+      notes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       return notes;
     } catch (e) {

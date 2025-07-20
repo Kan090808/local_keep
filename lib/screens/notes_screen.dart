@@ -16,7 +16,6 @@ class NotesScreen extends StatefulWidget {
 
 class _NotesScreenState extends State<NotesScreen> {
   bool _isLoading = false;
-  bool _isReorderMode = false;
 
   @override
   void initState() {
@@ -98,64 +97,18 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
-  void _enterReorderMode() {
-    setState(() {
-      _isReorderMode = true;
-    });
-  }
-
-  void _exitReorderMode() {
-    setState(() {
-      _isReorderMode = false;
-    });
-  }
-
-  void _onReorder(int oldIndex, int newIndex) async {
-    try {
-      await Provider.of<NoteProvider>(
-        context,
-        listen: false,
-      ).reorderNotes(oldIndex, newIndex);
-    } catch (e) {
-      print('Error reordering notes: $e');
-      // Show error message to user
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to reorder notes: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        // NoteProvider already handles reverting on error
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isReorderMode ? 'Reorder Notes' : 'Local Keep'),
+        title: const Text('Local Keep'),
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         actions: [
-          if (_isReorderMode)
-            IconButton(
-              icon: const Icon(Icons.check),
-              onPressed: _exitReorderMode,
-              tooltip: 'Done',
-            )
-          else ...[
-            IconButton(
-              icon: const Icon(Icons.reorder),
-              onPressed: _enterReorderMode,
-              tooltip: 'Reorder Notes',
-            ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: _goToSettings,
-              tooltip: 'Settings',
-            ),
-          ],
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: _goToSettings,
+            tooltip: 'Settings',
+          ),
         ],
       ),
       body:
@@ -172,26 +125,17 @@ class _NotesScreenState extends State<NotesScreen> {
 
                   return Padding(
                     padding: const EdgeInsets.all(8.0),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child:
-                          _isReorderMode
-                              ? _buildReorderView(notes)
-                              : _buildListView(notes),
-                    ),
+                    child: _buildListView(notes),
                   );
                 },
               ),
-      floatingActionButton:
-          _isReorderMode
-              ? null
-              : FloatingActionButton(
-                onPressed: _createNote,
-                backgroundColor: Colors.teal,
-                foregroundColor: Colors.white,
-                tooltip: 'Add Note',
-                child: const Icon(Icons.add),
-              ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _createNote,
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+        tooltip: 'Add Note',
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
@@ -209,58 +153,12 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 
-  Widget _buildReorderView(List<Note> notes) {
-    return Column(
-      children: [
-        // Instructions
-        Container(
-          padding: const EdgeInsets.all(16),
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.teal.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Row(
-            children: [
-              Icon(Icons.info_outline, color: Colors.teal, size: 20),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Drag notes to reorder them. Tap "Done" when finished.',
-                  style: TextStyle(color: Colors.teal, fontSize: 14),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // Reorderable list
-        Expanded(
-          child: ReorderableListView(
-            onReorder: _onReorder,
-            children:
-                notes.asMap().entries.map((entry) {
-                  return _buildReorderNoteCard(entry.value, entry.key);
-                }).toList(),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildListNoteCard(Note note, int index) {
     return NoteCard(
       note: note,
       index: index,
       onTap: () => _editNote(note),
       onCopy: () => _copyNote(note),
-    );
-  }
-
-  Widget _buildReorderNoteCard(Note note, int index) {
-    return ReorderableNoteCard(
-      note: note,
-      index: index,
-      onEdit: () => _editNote(note),
     );
   }
 }
