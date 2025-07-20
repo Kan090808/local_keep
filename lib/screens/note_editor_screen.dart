@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -17,12 +18,15 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   final _contentController = TextEditingController();
   final _focusNode = FocusNode();
   bool _isEdited = false;
+  String _lastSavedContent = '';
+  Timer? _saveTimer;
 
   @override
   void initState() {
     super.initState();
     if (widget.note != null) {
       _contentController.text = widget.note!.content;
+      _lastSavedContent = widget.note!.content;
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         FocusScope.of(context).requestFocus(_focusNode);
@@ -34,6 +38,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   void dispose() {
     _contentController.dispose();
     _focusNode.dispose();
+    _saveTimer?.cancel();
     super.dispose();
   }
 
@@ -51,7 +56,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       }
 
       if (mounted) {
-        Navigator.of(context).pop();
+        Navigator.of(
+          context,
+        ).pop(true); // Return true to indicate changes were made
       }
     } catch (e) {
       print('Error saving note: $e');
@@ -138,7 +145,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
             false;
 
         if (shouldPop && context.mounted) {
-          Navigator.of(context).pop();
+          Navigator.of(context).pop(_isEdited ? true : false);
         }
       },
       child: Scaffold(
@@ -191,7 +198,28 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                   expands: true,
                   textAlignVertical: TextAlignVertical.top,
                   keyboardType: TextInputType.multiline,
-                  onChanged: (value) => setState(() => _isEdited = true),
+                  onChanged: (value) {
+                    // Enhanced change detection for better performance
+                    final contentLength = value.length;
+                    final lastSavedLength = _lastSavedContent.length;
+                    final hasSignificantChange = (lastSavedLength - contentLength).abs() > 3;
+                    final crossedWordBoundary = (contentLength ~/ 20) != (lastSavedLength ~/ 20);
+                    
+                    // More intelligent edit state management
+                    if (!_isEdited && (value != _lastSavedContent)) {
+                      setState(() => _isEdited = true);
+                    }
+
+                    // Auto-save existing notes with smart debouncing
+                    if (widget.note != null && (hasSignificantChange || crossedWordBoundary)) {
+                      final noteProvider = Provider.of<NoteProvider>(
+                        context,
+                        listen: false,
+                      );
+                      noteProvider.updateNoteDebounced(widget.note!, value);
+                      _lastSavedContent = value; // Update after debounced call
+                    }
+                  },
                 ),
               ),
             ],
