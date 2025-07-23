@@ -95,32 +95,43 @@ class CryptoService {
 
   // Create an encrypted version of the password for in-memory storage
   static Future<String> createMemoryEncryptedPassword(String password) async {
-    // Use device-specific entropy for better security
+    // Use a combination of device-specific salt and password-derived key
     final deviceSalt = await _getDeviceSpecificSalt();
-    final key = Key(_deriveKeyFromPassword(password, deviceSalt).sublist(0, 32));
+    final passwordSalt = await _getOrCreateSalt();
+    
+    // Create a stronger key by combining device salt with password
+    final combinedSalt = Uint8List.fromList([...deviceSalt, ...passwordSalt]);
+    final key = Key(_deriveKeyFromPassword(password, combinedSalt).sublist(0, 32));
     final iv = IV.fromSecureRandom(16);
     final encrypter = Encrypter(AES(key));
 
+    // Encrypt the password with itself as part of the key derivation
     final encrypted = encrypter.encrypt(password, iv: iv);
 
-    // Combine device salt, iv, and encrypted data for decryption later
-    final combined = deviceSalt + iv.bytes + encrypted.bytes;
+    // Store only IV and encrypted data (not the salts for better security)
+    final combined = iv.bytes + encrypted.bytes;
     return base64.encode(combined);
   }
 
   // Decrypt the memory-encrypted password when needed
-  static String decryptMemoryEncryptedPassword(String encryptedPassword) {
+  // Note: This requires the original password to decrypt, providing circular security
+  static Future<String> decryptMemoryEncryptedPassword(
+    String encryptedPassword, 
+    String originalPassword,
+  ) async {
     try {
       final combined = base64.decode(encryptedPassword);
 
-      // Extract device salt, iv, and encrypted data
-      final deviceSalt = combined.sublist(0, 32);
-      final ivBytes = combined.sublist(32, 48);
-      final encryptedBytes = combined.sublist(48);
+      // Extract IV and encrypted data
+      final ivBytes = combined.sublist(0, 16);
+      final encryptedBytes = combined.sublist(16);
 
-      // Derive key using the same device salt
-      final keyBytes = _deriveKeyFromPassword('', deviceSalt).sublist(0, 32);
-      final key = Key(keyBytes);
+      // Recreate the same key used for encryption
+      final deviceSalt = await _getDeviceSpecificSalt();
+      final passwordSalt = await _getOrCreateSalt();
+      final combinedSalt = Uint8List.fromList([...deviceSalt, ...passwordSalt]);
+      final key = Key(_deriveKeyFromPassword(originalPassword, combinedSalt).sublist(0, 32));
+      
       final iv = IV(ivBytes);
       final encrypter = Encrypter(AES(key));
 

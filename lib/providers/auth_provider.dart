@@ -19,10 +19,10 @@ class AuthProvider with ChangeNotifier {
     try {
       await CryptoService.setupPassword(password);
 
-      // Create encrypted version for memory storage
-      _encryptedPassword = await CryptoService.createMemoryEncryptedPassword(
-        password,
-      );
+      // Store password hash instead of encrypted password
+      final salt = await CryptoService._getOrCreateSalt();
+      final hash = CryptoService._deriveKeyFromPassword(password, salt);
+      _passwordHash = base64.encode(hash);
 
       _isAuthenticated = true;
       await HiveDatabaseService.setPassword(password);
@@ -41,10 +41,10 @@ class AuthProvider with ChangeNotifier {
   Future<bool> verifyPassword(String password) async {
     final isValid = await CryptoService.verifyPassword(password);
     if (isValid) {
-      // Create encrypted version for memory storage
-      _encryptedPassword = await CryptoService.createMemoryEncryptedPassword(
-        password,
-      );
+      // Store password hash for verification
+      final salt = await CryptoService._getOrCreateSalt();
+      final hash = CryptoService._deriveKeyFromPassword(password, salt);
+      _passwordHash = base64.encode(hash);
 
       _isAuthenticated = true;
       await HiveDatabaseService.setPassword(password);
@@ -142,9 +142,9 @@ class AuthProvider with ChangeNotifier {
 
   // Clear sensitive data from memory
   void clearSensitiveData() {
-    if (_encryptedPassword != null) {
-      // Attempt to overwrite sensitive data
-      _encryptedPassword = null;
+    if (_passwordHash != null) {
+      // Clear password hash
+      _passwordHash = null;
     }
     // Force garbage collection
     Future.delayed(Duration.zero, () {
@@ -154,19 +154,22 @@ class AuthProvider with ChangeNotifier {
     });
   }
 
-  // Get current password (decrypted from memory-encrypted version)
-  // Use with caution - only when absolutely necessary
-  String? get currentPassword {
-    if (_encryptedPassword == null) return null;
+  // Store the password hash for verification instead of encrypted password
+  String? _passwordHash;
+
+  // Verify and get current password when needed
+  Future<String?> getCurrentPassword(String inputPassword) async {
+    if (_passwordHash == null) return null;
+    
     try {
-      final password = CryptoService.decryptMemoryEncryptedPassword(_encryptedPassword!);
-      // Schedule cleanup of the returned password
-      Future.delayed(const Duration(seconds: 1), () {
-        // The password string will be eligible for GC after this
-      });
-      return password;
+      // Verify the input password against stored hash
+      final isValid = await CryptoService.verifyPassword(inputPassword);
+      if (isValid) {
+        return inputPassword;
+      }
+      return null;
     } catch (e) {
-      print('Error decrypting password: $e');
+      print('Error verifying password: $e');
       return null;
     }
   }
