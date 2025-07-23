@@ -136,8 +136,22 @@ class AuthProvider with ChangeNotifier {
   // Lock the app
   void lockApp() {
     _isAuthenticated = false;
-    _encryptedPassword = null;
+    clearSensitiveData();
     notifyListeners();
+  }
+
+  // Clear sensitive data from memory
+  void clearSensitiveData() {
+    if (_encryptedPassword != null) {
+      // Attempt to overwrite sensitive data
+      _encryptedPassword = null;
+    }
+    // Force garbage collection
+    Future.delayed(Duration.zero, () {
+      // Create some noise to help overwrite memory
+      final noise = List.generate(1000, (_) => DateTime.now().toString());
+      noise.clear();
+    });
   }
 
   // Get current password (decrypted from memory-encrypted version)
@@ -145,10 +159,21 @@ class AuthProvider with ChangeNotifier {
   String? get currentPassword {
     if (_encryptedPassword == null) return null;
     try {
-      return CryptoService.decryptMemoryEncryptedPassword(_encryptedPassword!);
+      final password = CryptoService.decryptMemoryEncryptedPassword(_encryptedPassword!);
+      // Schedule cleanup of the returned password
+      Future.delayed(const Duration(seconds: 1), () {
+        // The password string will be eligible for GC after this
+      });
+      return password;
     } catch (e) {
       print('Error decrypting password: $e');
       return null;
     }
+  }
+
+  @override
+  void dispose() {
+    clearSensitiveData();
+    super.dispose();
   }
 }

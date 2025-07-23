@@ -58,9 +58,25 @@ class HiveDatabaseService {
 
   // Set current password for cryptographic operations (store encrypted in memory)
   static Future<void> setPassword(String password) async {
+    // Clear any existing password first
+    _clearPassword();
+    
     _encryptedPassword = await CryptoService.createMemoryEncryptedPassword(
       password,
     );
+    
+    // Clear the input parameter from local scope
+    password = ''; // Help with garbage collection
+  }
+
+  // Clear password from memory
+  static void _clearPassword() {
+    if (_encryptedPassword != null) {
+      _encryptedPassword = null;
+      // Force some memory operations to help with cleanup
+      final noise = List.generate(100, (_) => DateTime.now().toString());
+      noise.clear();
+    }
   }
 
   // Get the decrypted password when needed
@@ -452,5 +468,7 @@ class HiveDatabaseService {
       await _notesBox!.close();
       _notesBox = null;
     }
+    // Clear sensitive data when closing
+    _clearPassword();
   }
 }

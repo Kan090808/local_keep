@@ -10,7 +10,7 @@ class CryptoService {
   static const _ivKey = 'encryption_iv';
   static const _saltKey = 'encryption_salt';
   static const _passwordHashKey = 'password_hash';
-  static const _iterations = 10000;
+  static const _iterations = 100000; // Increased from 10000 for better security
   static const _keyLength = 32; // 256 bits
 
   // Generate random bytes for salt and IV
@@ -95,16 +95,16 @@ class CryptoService {
 
   // Create an encrypted version of the password for in-memory storage
   static Future<String> createMemoryEncryptedPassword(String password) async {
-    // Use a simple encryption with a fixed key for memory storage
-    // This is just to obfuscate the password in memory, not for strong security
-    final key = Key.fromSecureRandom(32);
+    // Use device-specific entropy for better security
+    final deviceSalt = await _getDeviceSpecificSalt();
+    final key = Key(_deriveKeyFromPassword(password, deviceSalt).sublist(0, 32));
     final iv = IV.fromSecureRandom(16);
     final encrypter = Encrypter(AES(key));
 
     final encrypted = encrypter.encrypt(password, iv: iv);
 
-    // Combine key, iv, and encrypted data for decryption later
-    final combined = key.bytes + iv.bytes + encrypted.bytes;
+    // Combine device salt, iv, and encrypted data for decryption later
+    final combined = deviceSalt + iv.bytes + encrypted.bytes;
     return base64.encode(combined);
   }
 
@@ -113,11 +113,13 @@ class CryptoService {
     try {
       final combined = base64.decode(encryptedPassword);
 
-      // Extract key, iv, and encrypted data
-      final keyBytes = combined.sublist(0, 32);
+      // Extract device salt, iv, and encrypted data
+      final deviceSalt = combined.sublist(0, 32);
       final ivBytes = combined.sublist(32, 48);
       final encryptedBytes = combined.sublist(48);
 
+      // Derive key using the same device salt
+      final keyBytes = _deriveKeyFromPassword('', deviceSalt).sublist(0, 32);
       final key = Key(keyBytes);
       final iv = IV(ivBytes);
       final encrypter = Encrypter(AES(key));
@@ -135,17 +137,18 @@ class CryptoService {
     }
 
     final salt = await _getOrCreateSalt();
-    final iv = _generateRandomBytes(
-      16,
-    ); // Generate a new IV for each encryption
+    final iv = _generateRandomBytes(16); // Generate a new IV for each encryption
     final key = _deriveKeyFromPassword(password, salt);
 
     final encrypter = Encrypter(AES(Key(key)));
     final encrypted = encrypter.encrypt(data, iv: IV(iv));
 
-    // Concatenate IV with encrypted data and encode in Base64
-    final ivAndEncrypted = iv + encrypted.bytes;
-    return base64.encode(ivAndEncrypted);
+    // Create HMAC for integrity verification
+    final hmac = await _createHMAC(iv + encrypted.bytes, password, salt);
+
+    // Concatenate IV, encrypted data, and HMAC, then encode in Base64
+    final combined = iv + encrypted.bytes + hmac;
+    return base64.encode(combined);
   }
 
   // Decrypt data using the password
@@ -158,16 +161,77 @@ class CryptoService {
     final key = _deriveKeyFromPassword(password, salt);
 
     // Decode the Base64 encoded data
-    final ivAndEncrypted = base64.decode(encryptedData);
+    final combined = base64.decode(encryptedData);
 
-    // Extract the IV and the encrypted data
-    final iv = ivAndEncrypted.sublist(0, 16);
-    final encryptedBytes = ivAndEncrypted.sublist(16);
+    // Handle legacy format (without HMAC) for backward compatibility
+    if (combined.length < 48) { // IV(16) + data + HMAC(32) minimum
+      // Legacy format: IV + encrypted data only
+      final iv = combined.sublist(0, 16);
+      final encryptedBytes = combined.sublist(16);
+      
+      final encrypter = Encrypter(AES(Key(key)));
+      final encrypted = Encrypted(encryptedBytes);
+      return encrypter.decrypt(encrypted, iv: IV(iv));
+    }
+
+    // New format: IV + encrypted data + HMAC
+    final iv = combined.sublist(0, 16);
+    final encryptedBytes = combined.sublist(16, combined.length - 32);
+    final receivedHmac = combined.sublist(combined.length - 32);
+
+    // Verify HMAC for integrity
+    final expectedHmac = await _createHMAC(iv + encryptedBytes, password, salt);
+    if (!_constantTimeEquals(receivedHmac, expectedHmac)) {
+      throw Exception('Data integrity verification failed');
+    }
 
     final encrypter = Encrypter(AES(Key(key)));
     final encrypted = Encrypted(encryptedBytes);
+    return encrypter.decrypt(encrypted, iv: IV(iv));
+  }
+  // Get device-specific salt for memory encryption
+  static Future<Uint8List> _getDeviceSpecificSalt() async {
+    const deviceSaltKey = 'device_specific_salt';
+    final storedSalt = await _secureStorage.read(key: deviceSaltKey);
+    if (storedSalt != null) {
+      return base64.decode(storedSalt);
+    } else {
+      final salt = _generateRandomBytes(32);
+      await _secureStorage.write(key: deviceSaltKey, value: base64.encode(salt));
+      return salt;
+    }
+  }
 
-    final decrypted = encrypter.decrypt(encrypted, iv: IV(iv));
-    return decrypted;
+  // Create HMAC for data integrity verification
+  static Future<Uint8List> _createHMAC(
+    Uint8List data,
+    String password,
+    Uint8List salt,
+  ) async {
+    final hmacKey = _deriveKeyFromPassword(password + '_hmac', salt);
+    final hmac = Hmac(sha256, hmacKey);
+    final digest = hmac.convert(data);
+    return Uint8List.fromList(digest.bytes);
+  }
+
+  // Constant-time comparison to prevent timing attacks
+  static bool _constantTimeEquals(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    
+    int result = 0;
+    for (int i = 0; i < a.length; i++) {
+      result |= a[i] ^ b[i];
+    }
+    return result == 0;
+  }
+
+  // Secure memory cleanup (best effort)
+  static void _secureCleanup(String sensitiveData) {
+    // In Dart, we can't directly overwrite memory, but we can help GC
+    // by creating noise and triggering collection
+    for (int i = 0; i < 10; i++) {
+      final noise = List.generate(sensitiveData.length, (_) => Random().nextInt(256));
+      noise.clear();
+    }
   }
 }

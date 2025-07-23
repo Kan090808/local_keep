@@ -61,7 +61,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _triggerLock() {
     final currentContext = navigatorKey.currentContext;
     if (currentContext != null) {
-      Provider.of<AuthProvider>(currentContext, listen: false).lockApp();
+      final authProvider = Provider.of<AuthProvider>(currentContext, listen: false);
+      authProvider.lockApp();
+      // Clear sensitive data from memory
+      authProvider.clearSensitiveData();
     }
     navigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const AuthScreen()),
