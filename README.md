@@ -41,7 +41,9 @@ A fully local encrypted note-taking app that prioritizes your privacy and securi
 ## Getting Started
 
 ### Quick Start (Web)
-Simply visit [https://chat-849ed.web.app](https://chat-849ed.web.app) in your web browser to start using Local Keep immediately. No installation required!
+Visit the live demo at: **[https://kan090808.github.io/local_keep/](https://kan090808.github.io/local_keep/)**
+
+No installation required! Your notes are stored locally and encrypted in your browser.
 
 ### Development Setup
 
@@ -76,6 +78,21 @@ Simply visit [https://chat-849ed.web.app](https://chat-849ed.web.app) in your we
 ```bash
 flutter build web --release
 ```
+
+## Deployment
+
+### GitHub Pages (Automatic)
+This project is configured for automatic deployment to GitHub Pages. Every commit to the `master` branch will trigger a build and deploy to: https://kan090808.github.io/local_keep/
+
+### Manual Deployment
+To deploy manually:
+
+1. Build for web:
+   ```bash
+   flutter build web --release --web-renderer html --base-href "/local_keep/"
+   ```
+
+2. The built files will be in `build/web/` - upload these to your web server.
 
 ## Usage
 

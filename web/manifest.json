@@ -1,11 +1,11 @@
 {
-    "name": "local_keep",
-    "short_name": "local_keep",
+    "name": "Local Keep - Secure Note Taking",
+    "short_name": "Local Keep",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Secure local note-taking app with end-to-end encryption",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
