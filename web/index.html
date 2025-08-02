@@ -15,6 +15,14 @@
     the `--base-href` argument provided to `flutter build`.
   -->
   <base href="$FLUTTER_BASE_HREF">
+  <script>
+    // When hosted on GitHub Pages the app is served from a subfolder.
+    // Update the base href dynamically so Flutter can load its assets
+    // regardless of the repository name.
+    var baseTag = document.querySelector('base');
+    var path = window.location.pathname.split('/').slice(0, -1).join('/') + '/';
+    baseTag.setAttribute('href', path);
+  </script>
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">

@@ -3,10 +3,20 @@
 <head>
     <meta charset="utf-8">
     <title>Redirecting to Local Keep</title>
-    <meta http-equiv="refresh" content="0; url=./web/">
-    <link rel="canonical" href="./web/">
+    <script>
+      // Redirect to the Flutter web build regardless of the repository name
+      var path = window.location.pathname.replace(/[^/]*$/, '') + 'web/';
+      window.location.replace(path);
+    </script>
+    <link id="canonical-link" rel="canonical" href="./web/">
 </head>
 <body>
-    <p>If you are not redirected automatically, <a href="./web/">click here to access Local Keep</a>.</p>
+    <p>If you are not redirected automatically, <a id="redirect-link" href="./web/">click here to access Local Keep</a>.</p>
+    <script>
+      // Update the fallback link to the correct path
+      var path = window.location.pathname.replace(/[^/]*$/, '') + 'web/';
+      document.getElementById('redirect-link').href = path;
+      document.getElementById('canonical-link').href = path;
+    </script>
 </body>
 </html>
