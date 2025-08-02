@@ -42,7 +42,16 @@ jobs:
       run: flutter config --enable-web
 
     - name: Build web app
-      run: flutter build web --release --web-renderer html --base-href "/local_keep/"
+      run: flutter build web --release --base-href "/local_keep/"
+
+    - name: Create deployment structure
+      run: |
+        # Create the deployment directory
+        mkdir -p ./deploy
+        # Copy Flutter web build to web subdirectory
+        cp -r ./build/web ./deploy/web
+        # Copy the root index.html (redirect file) to deployment root
+        cp ./index.html ./deploy/index.html
 
     - name: Setup Pages
       uses: actions/configure-pages@v4
@@ -50,7 +59,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
-        path: './build/web'
+        path: './deploy'
 
   deploy:
     environment:

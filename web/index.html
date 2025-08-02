@@ -20,8 +20,20 @@
     // Update the base href dynamically so Flutter can load its assets
     // regardless of the repository name.
     var baseTag = document.querySelector('base');
-    var path = window.location.pathname.split('/').slice(0, -1).join('/') + '/';
-    baseTag.setAttribute('href', path);
+    var currentHref = baseTag.getAttribute('href');
+    
+    // If the base href wasn't replaced by Flutter build, calculate it dynamically
+    if (currentHref === '$FLUTTER_BASE_HREF' || currentHref === '/') {
+      var path = window.location.pathname;
+      if (path.endsWith('/web/')) {
+        // We're in the web subdirectory, use the parent path
+        path = path.substring(0, path.length - 4);
+      } else if (!path.endsWith('/')) {
+        // Ensure trailing slash
+        path = path + '/';
+      }
+      baseTag.setAttribute('href', path);
+    }
   </script>
 
   <meta charset="UTF-8">
