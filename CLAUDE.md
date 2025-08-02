@@ -25,9 +25,17 @@ flutter pub get               # Install dependencies
 flutter clean                 # Clean build artifacts
 ```
 
-### Icon Generation
+### Code Generation and Build Setup
 ```bash
+dart run build_runner build          # Generate Hive adapters and JSON serialization
 flutter pub run flutter_launcher_icons:main  # Generate app icons
+flutter config --enable-web          # Enable web support (one-time setup)
+```
+
+### Web Deployment
+```bash
+flutter build web --release --base-href "/local_keep/"  # Build for GitHub Pages
+flutter build web --release          # Build for general web deployment
 ```
 
 ## Architecture
@@ -83,6 +91,24 @@ Key packages:
 ## Testing
 
 The project uses Flutter's standard testing framework. Tests should be added to validate the core encryption/decryption functionality and note management features.
+
+## Development Setup
+
+### Prerequisites
+- Flutter SDK (3.32.8+ recommended for web deployment compatibility)
+- Dart SDK
+- Web browser for testing
+
+### Initial Setup
+1. Install dependencies: `flutter pub get`
+2. Generate required code: `dart run build_runner build`
+3. Enable web support: `flutter config --enable-web`
+4. Run on web: `flutter run -d web`
+
+### Deployment
+- **Live Demo**: https://kan090808.github.io/local_keep/
+- **Automatic Deployment**: GitHub Actions deploys to GitHub Pages on every push to master
+- **Manual Web Build**: Use `--base-href "/local_keep/"` for GitHub Pages deployment
 
 ## Platform Support
 

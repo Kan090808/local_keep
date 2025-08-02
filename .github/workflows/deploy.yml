@@ -3,8 +3,6 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [ master, main ]
-  pull_request:
-    branches: [ master, main ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -38,6 +36,9 @@ jobs:
     - name: Install dependencies
       run: flutter pub get
 
+    - name: Generate code
+      run: dart run build_runner build --delete-conflicting-outputs
+
     - name: Enable web support
       run: flutter config --enable-web
 
@@ -48,10 +49,10 @@ jobs:
       run: |
         # Create the deployment directory
         mkdir -p ./deploy
-        # Copy Flutter web build to web subdirectory
-        cp -r ./build/web ./deploy/web
-        # Copy the root index.html (redirect file) to deployment root
-        cp ./index.html ./deploy/index.html
+        # Copy Flutter web build directly to deployment root
+        cp -r ./build/web/* ./deploy/
+        # Ensure .nojekyll is present
+        touch ./deploy/.nojekyll
 
     - name: Setup Pages
       uses: actions/configure-pages@v4
