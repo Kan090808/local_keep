@@ -43,6 +43,13 @@
     if (currentHref !== path) {
       baseTag.setAttribute('href', path);
     }
+    
+    // Update manifest link to ensure it loads correctly
+    var manifestLink = document.querySelector('link[rel="manifest"]');
+    if (manifestLink && window.location.pathname.includes('/web')) {
+      // We're in the web directory, manifest should be relative to current location
+      manifestLink.setAttribute('href', './manifest.json');
+    }
   </script>
 
   <meta charset="UTF-8">
