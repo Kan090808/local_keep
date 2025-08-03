@@ -3,6 +3,18 @@ import 'package:hive/hive.dart';
 
 part 'note.g.dart';
 
+@HiveType(typeId: 1)
+enum NoteType {
+  @HiveField(0)
+  text,
+  @HiveField(1)
+  image,
+  @HiveField(2)
+  video,
+  @HiveField(3)
+  file,
+}
+
 @HiveType(typeId: 0)
 class Note {
   @HiveField(0)
@@ -15,6 +27,8 @@ class Note {
   final DateTime updatedAt;
   @HiveField(4)
   final int orderIndex;
+  @HiveField(5)
+  final NoteType type;
 
   Note({
     this.id,
@@ -22,11 +36,12 @@ class Note {
     required this.createdAt,
     required this.updatedAt,
     this.orderIndex = 0,
+    this.type = NoteType.text,
   });
 
-  factory Note.create({required String content}) {
+  factory Note.create({required String content, NoteType type = NoteType.text}) {
     final now = DateTime.now();
-    return Note(content: content, createdAt: now, updatedAt: now);
+    return Note(content: content, createdAt: now, updatedAt: now, type: type);
   }
 
   Map<String, dynamic> toMap() {
@@ -36,6 +51,7 @@ class Note {
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
       'order_index': orderIndex,
+      'type': type.index,
     };
   }
 
@@ -46,6 +62,7 @@ class Note {
       createdAt: DateTime.parse(map['created_at']),
       updatedAt: DateTime.parse(map['updated_at']),
       orderIndex: map['order_index'] ?? 0,
+      type: NoteType.values[map['type'] ?? 0],
     );
   }
 
@@ -54,6 +71,7 @@ class Note {
     String? content,
     DateTime? updatedAt,
     int? orderIndex,
+    NoteType? type,
   }) {
     return Note(
       id: id ?? this.id,
@@ -61,6 +79,7 @@ class Note {
       createdAt: createdAt,
       updatedAt: updatedAt ?? DateTime.now(),
       orderIndex: orderIndex ?? this.orderIndex,
+      type: type ?? this.type,
     );
   }
 

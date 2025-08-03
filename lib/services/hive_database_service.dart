@@ -15,7 +15,9 @@ class HiveDatabaseService {
   static Future<void> initialize() async {
     if (!_isInitialized) {
       await Hive.initFlutter();
-      Hive.registerAdapter(NoteAdapter());
+      Hive
+        ..registerAdapter(NoteTypeAdapter())
+        ..registerAdapter(NoteAdapter());
       _isInitialized = true;
     }
   }
@@ -67,6 +69,7 @@ class HiveDatabaseService {
       createdAt: note.createdAt,
       updatedAt: note.updatedAt,
       orderIndex: 0,
+      type: note.type,
     );
 
     await box.put(id, noteToStore);
@@ -91,6 +94,7 @@ class HiveDatabaseService {
           createdAt: note.createdAt,
           updatedAt: note.updatedAt,
           orderIndex: note.orderIndex,
+          type: note.type,
         ));
       } catch (e) {
         print('Error decrypting note ${note.id}: $e');
@@ -120,6 +124,7 @@ class HiveDatabaseService {
       createdAt: note.createdAt,
       updatedAt: note.updatedAt,
       orderIndex: note.orderIndex,
+      type: note.type,
     );
 
     await box.put(note.id!, updatedNote);
@@ -163,6 +168,7 @@ class HiveDatabaseService {
           createdAt: note.createdAt,
           updatedAt: note.updatedAt,
           orderIndex: note.orderIndex,
+          type: note.type,
         );
 
         await box.put(note.id!, updatedNote);

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:local_keep/models/note.dart';
 import 'package:local_keep/providers/note_provider.dart';
 import 'package:local_keep/screens/note_editor_screen.dart';
@@ -46,28 +48,78 @@ class _NotesScreenState extends State<NotesScreen> {
     ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
   }
 
-  void _createNote() {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const NoteEditorScreen()))
-        .then((result) {
-          // The NoteProvider already handles optimistic updates,
-          // so we don't need to reload unless there's an error
-          if (result == 'error') {
-            _loadNotes();
-          }
-        });
+  Future<void> _createNote() async {
+    final type = await showModalBottomSheet<NoteType>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.text_fields),
+              title: const Text('Text'),
+              onTap: () => Navigator.pop(context, NoteType.text),
+            ),
+            ListTile(
+              leading: const Icon(Icons.image),
+              title: const Text('Image'),
+              onTap: () => Navigator.pop(context, NoteType.image),
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam),
+              title: const Text('Video'),
+              onTap: () => Navigator.pop(context, NoteType.video),
+            ),
+            ListTile(
+              leading: const Icon(Icons.insert_drive_file),
+              title: const Text('File'),
+              onTap: () => Navigator.pop(context, NoteType.file),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (type == null) return;
+
+    if (type == NoteType.text) {
+      Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => const NoteEditorScreen()))
+          .then((result) {
+        if (result == 'error') {
+          _loadNotes();
+        }
+      });
+    } else {
+      final result = await FilePicker.platform.pickFiles(
+        type: type == NoteType.image
+            ? FileType.image
+            : type == NoteType.video
+                ? FileType.video
+                : FileType.any,
+      );
+      if (result != null && result.files.single.path != null) {
+        await Provider.of<NoteProvider>(context, listen: false)
+            .addNote(result.files.single.path!, type: type);
+      }
+    }
   }
 
   void _editNote(Note note) {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => NoteEditorScreen(note: note)))
         .then((result) {
-          // The NoteProvider already handles optimistic updates,
-          // so we don't need to reload unless there's an error
           if (result == 'error') {
             _loadNotes();
           }
         });
+  }
+
+  Future<void> _onNoteTap(Note note) async {
+    if (note.type == NoteType.text) {
+      _editNote(note);
+    } else {
+      await OpenFilex.open(note.content);
+    }
   }
 
   Future<void> _copyNote(Note note) async {
@@ -157,8 +209,8 @@ class _NotesScreenState extends State<NotesScreen> {
     return NoteCard(
       note: note,
       index: index,
-      onTap: () => _editNote(note),
-      onCopy: () => _copyNote(note),
+      onTap: () => _onNoteTap(note),
+      onCopy: note.type == NoteType.text ? () => _copyNote(note) : null,
     );
   }
 }

@@ -48,22 +48,46 @@ class _NoteCardState extends State<NoteCard>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (widget.note.content.isNotEmpty)
-                            Text(
-                              widget.note.content,
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 16),
-                            )
-                          else
-                            const Text(
-                              'Empty Note',
-                              style: TextStyle(
-                                color: Colors.grey,
-                                fontStyle: FontStyle.italic,
-                                fontSize: 16,
+                          if (widget.note.type == NoteType.text) ...[
+                            if (widget.note.content.isNotEmpty)
+                              Text(
+                                widget.note.content,
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 16),
+                              )
+                            else
+                              const Text(
+                                'Empty Note',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontStyle: FontStyle.italic,
+                                  fontSize: 16,
+                                ),
                               ),
+                          ] else ...[
+                            Row(
+                              children: [
+                                Icon(
+                                  widget.note.type == NoteType.image
+                                      ? Icons.image
+                                      : widget.note.type == NoteType.video
+                                          ? Icons.videocam
+                                          : Icons.insert_drive_file,
+                                  color: Colors.teal,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    widget.note.content.split('/').last,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
+                                ),
+                              ],
                             ),
+                          ],
                           const SizedBox(height: 8),
                           Text(
                             widget.note.formattedDate,

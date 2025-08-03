@@ -26,12 +26,12 @@ class NoteProvider with ChangeNotifier {
     }
   }
 
-  Future<void> addNote(String content) async {
+  Future<void> addNote(String content, {NoteType type = NoteType.text}) async {
     try {
-      final newNote = Note.create(content: content);
+      final newNote = Note.create(content: content, type: type);
       final id = await HiveDatabaseService.insertNote(newNote);
       final finalNote = newNote.copyWith(id: id);
-      
+
       _notes.insert(0, finalNote);
       notifyListeners();
     } catch (e) {
