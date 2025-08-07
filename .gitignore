@@ -148,3 +148,7 @@ firebase_options.dart
 *.dylib
 *.dll
 .firebaserc
+
+#serena 
+.serena
+.serena/*
