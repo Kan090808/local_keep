@@ -33,7 +33,7 @@ class BackupService {
     // Save as .lkeep file
     final bytes = Uint8List.fromList(utf8.encode(wrapper));
     final fileName =
-        'local_keep_backup_${DateTime.now().millisecondsSinceEpoch}.lkeep';
+        'local_keep_backup_${DateTime.now().millisecondsSinceEpoch}';
 
     final savedPath = await FileSaver.instance.saveFile(
       name: fileName,
