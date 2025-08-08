@@ -78,6 +78,17 @@ class CryptoService {
     return await _secureStorage.read(key: _passwordHashKey) != null;
   }
 
+  // Export crypto metadata (salt) for backup (password hash is not exported)
+  static Future<Map<String, String>> exportCryptoMetadata() async {
+    final salt = await _secureStorage.read(key: _saltKey);
+    return {'salt': salt ?? ''};
+  }
+
+  // Import crypto metadata (salt). Caller must ensure this is safe to do.
+  static Future<void> importCryptoMetadata({required String saltBase64}) async {
+    await _secureStorage.write(key: _saltKey, value: saltBase64);
+  }
+
   // Encrypt data
   static Future<String> encrypt(String data, String password) async {
     if (data.isEmpty) return '';
@@ -98,6 +109,26 @@ class CryptoService {
     if (encryptedData.isEmpty) return '';
 
     final salt = await _getOrCreateSalt();
+    final key = _deriveKeyFromPassword(password, salt);
+
+    final combined = base64.decode(encryptedData);
+    final iv = combined.sublist(0, 16);
+    final encryptedBytes = combined.sublist(16);
+
+    final encrypter = Encrypter(AES(Key(key)));
+    final encrypted = Encrypted(encryptedBytes);
+    return encrypter.decrypt(encrypted, iv: IV(iv));
+  }
+
+  // Decrypt using an explicit salt (base64) — for portable backups
+  static Future<String> decryptWithSalt(
+    String encryptedData,
+    String password,
+    String saltBase64,
+  ) async {
+    if (encryptedData.isEmpty) return '';
+
+    final salt = base64.decode(saltBase64);
     final key = _deriveKeyFromPassword(password, salt);
 
     final combined = base64.decode(encryptedData);
