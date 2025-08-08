@@ -46,7 +46,46 @@ class SettingsScreen extends StatelessWidget {
               ),
               TextButton(
                 onPressed: () async {
-                  Navigator.of(ctx).pop(); // Close the dialog first
+                  // Close confirmation first
+                  Navigator.of(ctx).pop();
+                  // Ask user to enter current password
+                  final controller = TextEditingController();
+                  final ok = await showDialog<bool>(
+                    context: context,
+                    builder:
+                        (pwdCtx) => AlertDialog(
+                          title: const Text('Enter Current Password'),
+                          content: TextField(
+                            controller: controller,
+                            obscureText: true,
+                            decoration: const InputDecoration(
+                              hintText: 'Current Password',
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(pwdCtx).pop(false),
+                              child: const Text('Cancel'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(pwdCtx).pop(true),
+                              child: const Text('Confirm'),
+                            ),
+                          ],
+                        ),
+                  );
+                  if (ok != true) return;
+                  final pwd = controller.text;
+                  final valid = await CryptoService.verifyPassword(pwd);
+                  if (!valid) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Invalid password')),
+                      );
+                    }
+                    return;
+                  }
+
                   await _resetAllData(context);
                 },
                 style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -63,6 +102,8 @@ class SettingsScreen extends StatelessWidget {
     try {
       // TODO: Ensure AuthProvider has deleteAllNotes and it handles password reset state
       await authProvider.deleteAllNotes();
+      // Also wipe stored password hash and salt
+      await CryptoService.clearAll();
       // Resetting password state might involve more steps depending on CryptoService
       // For now, we just navigate back to AuthScreen for first-time setup
       if (context.mounted) {

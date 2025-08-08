@@ -89,6 +89,12 @@ class CryptoService {
     await _secureStorage.write(key: _saltKey, value: saltBase64);
   }
 
+  // Clear all sensitive keys (password hash and salt)
+  static Future<void> clearAll() async {
+    await _secureStorage.delete(key: _passwordHashKey);
+    await _secureStorage.delete(key: _saltKey);
+  }
+
   // Encrypt data
   static Future<String> encrypt(String data, String password) async {
     if (data.isEmpty) return '';
