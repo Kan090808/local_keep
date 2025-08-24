@@ -1,0 +1,37 @@
+End User License Agreement (EULA)
+
+IMPORTANT: PLEASE READ THIS LICENSE CAREFULLY BEFORE USING THE SOFTWARE.
+
+By installing or using the Local Keep application (the "App"), you agree to be bound by the terms of this End User License Agreement ("EULA"). If you do not agree to the terms of this EULA, do not install or use the App.
+
+1. License Grant
+The copyright holder grants you a limited, non-exclusive, non-transferable, non-sublicensable license to install and use the App solely for your personal or internal business purposes, subject to this EULA.
+
+2. Ownership
+The App is licensed, not sold. All rights, title, and interest in and to the App, including all intellectual property rights, are and will remain with the copyright holder.
+
+3. Restrictions
+You may not: (a) copy, modify, or create derivative works of the App; (b) distribute, transfer, sublicense, lease, lend, or rent the App to any third party; (c) reverse engineer, decompile, or disassemble the App except to the extent permitted by law; (d) remove or alter any proprietary notices; (e) use the App to provide services to third parties.
+
+4. Data and Privacy
+The App stores data locally on your device. You are responsible for backing up your data. For details on data handling, please refer to the Privacy Policy (if applicable).
+
+5. Updates
+The copyright holder may provide updates or patches at its discretion. This EULA applies to any updates that replace and/or supplement the original App.
+
+6. Disclaimer of Warranty
+THE APP IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+
+7. Limitation of Liability
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT WILL THE COPYRIGHT HOLDER BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, OR ANY LOSS OF DATA, PROFITS, OR REVENUE, ARISING OUT OF OR RELATED TO YOUR USE OF OR INABILITY TO USE THE APP, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+8. Termination
+This EULA is effective until terminated. Your rights under this EULA will terminate automatically if you fail to comply with any of its terms. Upon termination, you must cease all use of the App and delete all copies from your devices.
+
+9. Governing Law
+This EULA will be governed by and construed in accordance with the laws of the applicable jurisdiction of the copyright holder, without regard to conflict of law principles.
+
+10. Contact
+For questions about this EULA, contact: kanjingterng@gmail.com
+
+© 2025 Jayden Kan. All rights reserved.

@@ -103,26 +103,15 @@ To deploy manually:
 5. **Delete Notes**: Use the delete button in edit mode to remove notes
 6. **Settings**: Access password change and data reset options via the settings button
 
-## License
+## Licensing
 
-Copyright (c) 2025 Jayden Kan
+This repository is released under a Proprietary license (see `LICENSE`).
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to use,
-copy, modify, and distribute the Software **for non-commercial purposes only**, 
-subject to the following conditions:
+- Source code: Proprietary. All rights reserved. Viewing for evaluation is allowed; redistribution or modification is not permitted.
+- Store builds (iOS/Android/Desktop/Web): Distributed under a separate proprietary EULA included in the app package (see `EULA.txt`).
 
-The above copyright notice and this permission notice shall be included in all 
-copies or substantial portions of the Software.
+For commercial licensing inquiries, contact: kanjingterng@gmail.com
 
-COMMERCIAL USE IS STRICTLY PROHIBITED WITHOUT PRIOR WRITTEN PERMISSION.
+## Contributing
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
-SOFTWARE.
-
-For commercial licensing inquiries, please contact: kanjingterng@gmail.com
+This project does not accept external contributions (PRs or patches). Please use Issues for bug reports and feature requests only.
