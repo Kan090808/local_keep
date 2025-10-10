@@ -10,6 +10,7 @@ import 'package:mime/mime.dart';
 import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/services/crypto_service.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:local_keep/services/app_lifecycle_service.dart';
 
 class MediaService {
   static final _uuid = const Uuid();
@@ -27,7 +28,10 @@ class MediaService {
 
   /// Pick images from gallery
   static Future<List<MediaAttachment>?> pickImages(String password) async {
+    final lifecycleService = AppLifecycleService();
     try {
+      lifecycleService.startFilePicking();
+      
       final picker = ImagePicker();
       final images = await picker.pickMultiImage(
         maxWidth: 2048,
@@ -52,12 +56,17 @@ class MediaService {
     } catch (e) {
       print('Error picking images: $e');
       return null;
+    } finally {
+      lifecycleService.endFilePicking();
     }
   }
 
   /// Pick a video from gallery
   static Future<MediaAttachment?> pickVideo(String password) async {
+    final lifecycleService = AppLifecycleService();
     try {
+      lifecycleService.startFilePicking();
+      
       final picker = ImagePicker();
       final video = await picker.pickVideo(source: ImageSource.gallery);
 
@@ -68,12 +77,17 @@ class MediaService {
     } catch (e) {
       print('Error picking video: $e');
       return null;
+    } finally {
+      lifecycleService.endFilePicking();
     }
   }
 
   /// Pick files
   static Future<List<MediaAttachment>?> pickFiles(String password) async {
+    final lifecycleService = AppLifecycleService();
     try {
+      lifecycleService.startFilePicking();
+      
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.any,
@@ -98,6 +112,8 @@ class MediaService {
     } catch (e) {
       print('Error picking files: $e');
       return null;
+    } finally {
+      lifecycleService.endFilePicking();
     }
   }
 

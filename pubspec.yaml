@@ -2,7 +2,7 @@ name: local_keep
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.4+25101101
+version: 1.0.4+25101102
 
 environment:
   sdk: ^3.7.2

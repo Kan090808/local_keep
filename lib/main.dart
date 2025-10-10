@@ -4,6 +4,7 @@ import 'package:local_keep/screens/auth_screen.dart';
 import 'package:local_keep/providers/auth_provider.dart';
 import 'package:local_keep/providers/note_provider.dart';
 import 'package:local_keep/services/hive_database_service.dart';
+import 'package:local_keep/services/app_lifecycle_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,6 +22,8 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
+  
+  final _lifecycleService = AppLifecycleService();
 
   @override
   void initState() {
@@ -34,25 +37,44 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  void _triggerLock() {
+  Future<void> _triggerLock() async {
     final currentContext = navigatorKey.currentContext;
     if (currentContext != null) {
       final authProvider = Provider.of<AuthProvider>(
         currentContext,
         listen: false,
       );
+      
+      // Don't lock if currently picking a file
+      if (_lifecycleService.isPickingFile) {
+        print('Skipping lock: File picking in progress');
+        return;
+      }
+      
+      // Only lock if a password has been set
+      final hasPassword = await authProvider.isAppInitialized();
+      if (!hasPassword) {
+        print('Skipping lock: No password set');
+        return; // Don't lock if no password is set
+      }
+      
+      print('Locking app');
       authProvider.lockApp();
+      navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+        (route) => false,
+      );
     }
-    navigatorKey.currentState?.pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const AuthScreen()),
-      (route) => false,
-    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    
+    print('App lifecycle state changed to: $state');
+    
     if (state == AppLifecycleState.paused) {
+      // App went to background
       _triggerLock();
     }
   }
