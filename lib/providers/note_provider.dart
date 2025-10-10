@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:local_keep/models/note.dart';
 import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/services/hive_database_service.dart';
+import 'package:local_keep/services/media_service.dart';
 
 class NoteProvider with ChangeNotifier {
   List<Note> _notes = [];
@@ -102,6 +103,17 @@ class NoteProvider with ChangeNotifier {
   }
 
   Future<void> deleteNote(String id) async {
+    // Find the note to get its media attachments
+    final note = getNoteById(id);
+
+    // Delete associated media files
+    if (note != null && note.mediaAttachments.isNotEmpty) {
+      for (final media in note.mediaAttachments) {
+        await MediaService.deleteMedia(media);
+      }
+    }
+
+    // Delete the note from database
     await HiveDatabaseService.deleteNote(id);
     _notes.removeWhere((note) => note.id == id);
     notifyListeners();

@@ -128,19 +128,22 @@ class HiveDatabaseService {
         _currentPassword!,
       );
 
-      // Create note with encrypted content
+      // Create note with encrypted content and media attachments
       final noteToStore = Note(
         id: id,
         content: encryptedContent,
         createdAt: note.createdAt,
         updatedAt: note.updatedAt,
         orderIndex: note.orderIndex,
+        mediaAttachments: note.mediaAttachments, // Include media attachments
       );
 
       // Store in box
       await box.put(id, noteToStore);
 
-      print('✓ Note saved (ID: $id, length: ${note.content.length})');
+      print(
+        '✓ Note saved (ID: $id, length: ${note.content.length}, media: ${note.mediaAttachments.length})',
+      );
       return id;
     } catch (e) {
       print('✗ Error saving note: $e');
@@ -169,6 +172,8 @@ class HiveDatabaseService {
               createdAt: note.createdAt,
               updatedAt: note.updatedAt,
               orderIndex: note.orderIndex,
+              mediaAttachments:
+                  note.mediaAttachments, // Include media attachments
             ),
           );
         } catch (e) {
@@ -209,10 +214,13 @@ class HiveDatabaseService {
         createdAt: note.createdAt,
         updatedAt: note.updatedAt,
         orderIndex: note.orderIndex,
+        mediaAttachments: note.mediaAttachments, // Include media attachments
       );
 
       await box.put(note.id!, updatedNote);
-      print('✓ Note updated (ID: ${note.id})');
+      print(
+        '✓ Note updated (ID: ${note.id}, media: ${note.mediaAttachments.length})',
+      );
     } catch (e) {
       print('✗ Error updating note: $e');
       rethrow;
@@ -272,6 +280,8 @@ class HiveDatabaseService {
             createdAt: note.createdAt,
             updatedAt: note.updatedAt,
             orderIndex: note.orderIndex,
+            mediaAttachments:
+                note.mediaAttachments, // Include media attachments
           );
 
           await box.put(note.id!, updatedNote);

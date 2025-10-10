@@ -13,7 +13,7 @@ class MediaAttachment {
   final String fileName;
 
   @HiveField(2)
-  final String encryptedData; // Base64 encoded encrypted bytes
+  final String encryptedData; // File ID for encrypted media file (stored in app's internal storage)
 
   @HiveField(3)
   final int mediaTypeIndex; // 0: image, 1: video, 2: file
@@ -28,7 +28,7 @@ class MediaAttachment {
   final DateTime createdAt;
 
   @HiveField(7)
-  final String? thumbnailData; // Encrypted thumbnail for videos (optional)
+  final String? thumbnailData; // File ID for encrypted thumbnail (videos only)
 
   MediaAttachment({
     required this.id,
