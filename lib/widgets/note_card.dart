@@ -65,10 +65,28 @@ class _NoteCardState extends State<NoteCard>
                               ),
                             ),
                           const SizedBox(height: 8),
-                          Text(
-                            widget.note.formattedDate,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: Colors.grey[600]),
+                          Row(
+                            children: [
+                              Text(
+                                widget.note.formattedDate,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: Colors.grey[600]),
+                              ),
+                              if (widget.note.mediaAttachments.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.attach_file,
+                                  size: 14,
+                                  color: Colors.grey[600],
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${widget.note.mediaAttachments.length}',
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(color: Colors.grey[600]),
+                                ),
+                              ],
+                            ],
                           ),
                         ],
                       ),

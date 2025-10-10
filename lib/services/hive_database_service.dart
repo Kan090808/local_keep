@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:crypto/crypto.dart';
 import 'package:local_keep/models/note.dart';
+import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/services/crypto_service.dart';
 
 class HiveDatabaseService {
@@ -18,9 +19,12 @@ class HiveDatabaseService {
     try {
       await Hive.initFlutter();
 
-      // Only register adapter if not already registered
+      // Only register adapters if not already registered
       if (!Hive.isAdapterRegistered(0)) {
         Hive.registerAdapter(NoteAdapter());
+      }
+      if (!Hive.isAdapterRegistered(1)) {
+        Hive.registerAdapter(MediaAttachmentAdapter());
       }
 
       _isInitialized = true;
@@ -35,6 +39,11 @@ class HiveDatabaseService {
   static void setPassword(String password) {
     _currentPassword = password;
     print('✓ Password set for database');
+  }
+
+  /// Get current password
+  static String? getPassword() {
+    return _currentPassword;
   }
 
   /// Derive encryption key from password

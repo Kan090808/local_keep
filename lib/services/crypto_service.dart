@@ -145,4 +145,39 @@ class CryptoService {
     final encrypted = Encrypted(encryptedBytes);
     return encrypter.decrypt(encrypted, iv: IV(iv));
   }
+
+  // Encrypt bytes (for media files)
+  static Future<String> encryptBytes(Uint8List data, String password) async {
+    if (data.isEmpty) return '';
+
+    final salt = await _getOrCreateSalt();
+    final iv = _generateRandomBytes(16);
+    final key = _deriveKeyFromPassword(password, salt);
+
+    final encrypter = Encrypter(AES(Key(key)));
+    final encrypted = encrypter.encryptBytes(data, iv: IV(iv));
+
+    final combined = iv + encrypted.bytes;
+    return base64.encode(combined);
+  }
+
+  // Decrypt bytes (for media files)
+  static Future<Uint8List> decryptBytes(
+    String encryptedData,
+    String password,
+  ) async {
+    if (encryptedData.isEmpty) return Uint8List(0);
+
+    final salt = await _getOrCreateSalt();
+    final key = _deriveKeyFromPassword(password, salt);
+
+    final combined = base64.decode(encryptedData);
+    final iv = combined.sublist(0, 16);
+    final encryptedBytes = combined.sublist(16);
+
+    final encrypter = Encrypter(AES(Key(key)));
+    final encrypted = Encrypted(encryptedBytes);
+    final decryptedList = encrypter.decryptBytes(encrypted, iv: IV(iv));
+    return Uint8List.fromList(decryptedList);
+  }
 }

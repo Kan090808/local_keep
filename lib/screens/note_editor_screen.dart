@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:local_keep/models/note.dart';
+import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/providers/note_provider.dart';
+import 'package:local_keep/services/hive_database_service.dart';
+import 'package:local_keep/services/media_service.dart';
+import 'package:local_keep/widgets/media_gallery_widget.dart';
 
 class NoteEditorScreen extends StatefulWidget {
   final Note? note;
@@ -20,6 +24,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   bool _isEdited = false;
   String _lastSavedContent = '';
   Timer? _saveTimer;
+  List<MediaAttachment> _mediaAttachments = [];
 
   @override
   void initState() {
@@ -27,6 +32,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     if (widget.note != null) {
       _contentController.text = widget.note!.content;
       _lastSavedContent = widget.note!.content;
+      _mediaAttachments = List.from(widget.note!.mediaAttachments);
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         FocusScope.of(context).requestFocus(_focusNode);
@@ -45,8 +51,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   Future<void> _saveNote() async {
     final content = _contentController.text.trim();
 
-    // Don't save empty notes
-    if (content.isEmpty) {
+    // Don't save completely empty notes (no content and no media)
+    if (content.isEmpty && _mediaAttachments.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -63,10 +69,17 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     try {
       if (widget.note == null) {
         // Create new note
-        await noteProvider.addNote(content);
+        await noteProvider.addNote(
+          content,
+          mediaAttachments: _mediaAttachments,
+        );
       } else {
         // Update existing note
-        await noteProvider.updateNote(widget.note!, content);
+        await noteProvider.updateNote(
+          widget.note!,
+          content,
+          mediaAttachments: _mediaAttachments,
+        );
       }
 
       if (mounted) {
@@ -90,6 +103,91 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         );
       }
     }
+  }
+
+  Future<void> _addImages() async {
+    final password = HiveDatabaseService.getPassword();
+
+    if (password == null) return;
+
+    final images = await MediaService.pickImages(password);
+    if (images != null && images.isNotEmpty) {
+      setState(() {
+        _mediaAttachments.addAll(images);
+        _isEdited = true;
+      });
+    }
+  }
+
+  Future<void> _addVideo() async {
+    final password = HiveDatabaseService.getPassword();
+    if (password == null) return;
+
+    final video = await MediaService.pickVideo(password);
+    if (video != null) {
+      setState(() {
+        _mediaAttachments.add(video);
+        _isEdited = true;
+      });
+    }
+  }
+
+  Future<void> _addFiles() async {
+    final password = HiveDatabaseService.getPassword();
+    if (password == null) return;
+
+    final files = await MediaService.pickFiles(password);
+    if (files != null && files.isNotEmpty) {
+      setState(() {
+        _mediaAttachments.addAll(files);
+        _isEdited = true;
+      });
+    }
+  }
+
+  void _deleteMedia(MediaAttachment media) {
+    setState(() {
+      _mediaAttachments.remove(media);
+      _isEdited = true;
+    });
+  }
+
+  void _showMediaOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder:
+          (context) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Add Images'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _addImages();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.videocam),
+                  title: const Text('Add Video'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _addVideo();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.attach_file),
+                  title: const Text('Add Files'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _addFiles();
+                  },
+                ),
+              ],
+            ),
+          ),
+    );
   }
 
   void _copyNote() {
@@ -172,6 +270,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           actions: [
             IconButton(
+              icon: const Icon(Icons.attach_file),
+              tooltip: 'Add Media',
+              onPressed: _showMediaOptions,
+            ),
+            IconButton(
               icon: const Icon(Icons.copy),
               tooltip: 'Copy',
               onPressed: _copyNote,
@@ -205,44 +308,63 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                   ),
                 ),
               Expanded(
-                child: TextField(
-                  controller: _contentController,
-                  focusNode: _focusNode,
-                  decoration: const InputDecoration(
-                    hintText: 'Note content',
-                    hintStyle: TextStyle(color: Colors.grey),
-                    border: InputBorder.none,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextField(
+                        controller: _contentController,
+                        focusNode: _focusNode,
+                        decoration: const InputDecoration(
+                          hintText: 'Note content',
+                          hintStyle: TextStyle(color: Colors.grey),
+                          border: InputBorder.none,
+                        ),
+                        style: const TextStyle(fontSize: 16),
+                        maxLines: null,
+                        minLines: 5,
+                        keyboardType: TextInputType.multiline,
+                        onChanged: (value) {
+                          // Enhanced change detection for better performance
+                          final contentLength = value.length;
+                          final lastSavedLength = _lastSavedContent.length;
+                          final hasSignificantChange =
+                              (lastSavedLength - contentLength).abs() > 3;
+                          final crossedWordBoundary =
+                              (contentLength ~/ 20) != (lastSavedLength ~/ 20);
+
+                          // More intelligent edit state management
+                          if (!_isEdited && (value != _lastSavedContent)) {
+                            setState(() => _isEdited = true);
+                          }
+
+                          // Auto-save existing notes with smart debouncing
+                          if (widget.note != null &&
+                              (hasSignificantChange || crossedWordBoundary)) {
+                            final noteProvider = Provider.of<NoteProvider>(
+                              context,
+                              listen: false,
+                            );
+                            noteProvider.updateNoteDebounced(
+                              widget.note!,
+                              value,
+                              mediaAttachments: _mediaAttachments,
+                            );
+                            _lastSavedContent = value;
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Media Gallery
+                      if (_mediaAttachments.isNotEmpty) ...[
+                        MediaGalleryWidget(
+                          mediaAttachments: _mediaAttachments,
+                          password: HiveDatabaseService.getPassword() ?? '',
+                          onDeleteMedia: _deleteMedia,
+                        ),
+                      ],
+                    ],
                   ),
-                  style: const TextStyle(fontSize: 16),
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  keyboardType: TextInputType.multiline,
-                  onChanged: (value) {
-                    // Enhanced change detection for better performance
-                    final contentLength = value.length;
-                    final lastSavedLength = _lastSavedContent.length;
-                    final hasSignificantChange =
-                        (lastSavedLength - contentLength).abs() > 3;
-                    final crossedWordBoundary =
-                        (contentLength ~/ 20) != (lastSavedLength ~/ 20);
-
-                    // More intelligent edit state management
-                    if (!_isEdited && (value != _lastSavedContent)) {
-                      setState(() => _isEdited = true);
-                    }
-
-                    // Auto-save existing notes with smart debouncing
-                    if (widget.note != null &&
-                        (hasSignificantChange || crossedWordBoundary)) {
-                      final noteProvider = Provider.of<NoteProvider>(
-                        context,
-                        listen: false,
-                      );
-                      noteProvider.updateNoteDebounced(widget.note!, value);
-                      _lastSavedContent = value; // Update after debounced call
-                    }
-                  },
                 ),
               ),
             ],

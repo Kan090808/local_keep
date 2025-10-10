@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:local_keep/models/note.dart';
+import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/services/hive_database_service.dart';
 
 class NoteProvider with ChangeNotifier {
@@ -26,10 +27,16 @@ class NoteProvider with ChangeNotifier {
     }
   }
 
-  Future<void> addNote(String content) async {
+  Future<void> addNote(
+    String content, {
+    List<MediaAttachment>? mediaAttachments,
+  }) async {
     try {
       // Create new note
-      final newNote = Note.create(content: content);
+      final newNote = Note.create(
+        content: content,
+        mediaAttachments: mediaAttachments,
+      );
 
       // Save to database
       final id = await HiveDatabaseService.insertNote(newNote);
@@ -45,11 +52,16 @@ class NoteProvider with ChangeNotifier {
     }
   }
 
-  Future<void> updateNote(Note note, String content) async {
+  Future<void> updateNote(
+    Note note,
+    String content, {
+    List<MediaAttachment>? mediaAttachments,
+  }) async {
     try {
       final updatedNote = note.copyWith(
         content: content,
         updatedAt: DateTime.now(),
+        mediaAttachments: mediaAttachments ?? note.mediaAttachments,
       );
 
       final noteIndex = _notes.indexWhere((n) => n.id == note.id);
@@ -66,10 +78,15 @@ class NoteProvider with ChangeNotifier {
     }
   }
 
-  void updateNoteDebounced(Note note, String content) {
+  void updateNoteDebounced(
+    Note note,
+    String content, {
+    List<MediaAttachment>? mediaAttachments,
+  }) {
     final updatedNote = note.copyWith(
       content: content,
       updatedAt: DateTime.now(),
+      mediaAttachments: mediaAttachments ?? note.mediaAttachments,
     );
 
     final noteIndex = _notes.indexWhere((n) => n.id == note.id);

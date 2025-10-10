@@ -22,13 +22,14 @@ class NoteAdapter extends TypeAdapter<Note> {
       createdAt: fields[2] as DateTime,
       updatedAt: fields[3] as DateTime,
       orderIndex: fields[4] as int,
+      mediaAttachments: (fields[5] as List).cast<MediaAttachment>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, Note obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -38,7 +39,9 @@ class NoteAdapter extends TypeAdapter<Note> {
       ..writeByte(3)
       ..write(obj.updatedAt)
       ..writeByte(4)
-      ..write(obj.orderIndex);
+      ..write(obj.orderIndex)
+      ..writeByte(5)
+      ..write(obj.mediaAttachments);
   }
 
   @override
