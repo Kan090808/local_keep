@@ -19,11 +19,12 @@ A fully local encrypted note-taking app that prioritizes your privacy and securi
 - **Responsive design** that works on all screen sizes
 
 ### 📝 Note Management
-- ✍️ **Simple note creation and editing** with autosave
+- ✍️ **Simple text note creation and editing** with autosave
 - 📋 **Copy notes to clipboard** for easy sharing
 - 🕒 **Notes ordered by creation time** (newest first)
 - 🗑️ **Delete notes** with confirmation dialog
 - ⚡ **Optimized performance** with smart debouncing and object pooling
+- 📝 **Text-only notes** - focused on simple, secure note-taking
 
 ### 🛠️ Additional Features
 - 🔄 **Password change functionality** 

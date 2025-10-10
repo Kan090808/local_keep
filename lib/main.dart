@@ -1,6 +1,3 @@
-import 'dart:async';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:local_keep/screens/auth_screen.dart';
@@ -40,7 +37,10 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void _triggerLock() {
     final currentContext = navigatorKey.currentContext;
     if (currentContext != null) {
-      final authProvider = Provider.of<AuthProvider>(currentContext, listen: false);
+      final authProvider = Provider.of<AuthProvider>(
+        currentContext,
+        listen: false,
+      );
       authProvider.lockApp();
     }
     navigatorKey.currentState?.pushAndRemoveUntil(
@@ -89,17 +89,13 @@ class AppEntryPoint extends StatelessWidget {
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
+            body: Center(child: CircularProgressIndicator()),
           );
         }
 
         if (snapshot.hasError) {
           return Scaffold(
-            body: Center(
-              child: Text('Error: ${snapshot.error}'),
-            ),
+            body: Center(child: Text('Error: ${snapshot.error}')),
           );
         }
 

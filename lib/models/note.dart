@@ -26,7 +26,12 @@ class Note {
 
   factory Note.create({required String content}) {
     final now = DateTime.now();
-    return Note(content: content, createdAt: now, updatedAt: now);
+    return Note(
+      content: content,
+      createdAt: now,
+      updatedAt: now,
+      orderIndex: 0,
+    );
   }
 
   Map<String, dynamic> toMap() {

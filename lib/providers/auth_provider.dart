@@ -43,6 +43,12 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
     } catch (e) {
       print('Error deleting all notes: $e');
+      // If clearNotes fails due to corrupted DB, try resetting
+      if (e.toString().contains('unknown typeid') ||
+          e.toString().contains('type id')) {
+        print('Attempting database reset due to corruption...');
+        await HiveDatabaseService.resetDatabase();
+      }
     }
   }
 
@@ -54,7 +60,7 @@ class AuthProvider with ChangeNotifier {
 
       await HiveDatabaseService.reEncryptNotes(oldPassword, newPassword);
       await CryptoService.setupPassword(newPassword);
-      
+
       _isAuthenticated = true;
       HiveDatabaseService.setPassword(newPassword);
       notifyListeners();

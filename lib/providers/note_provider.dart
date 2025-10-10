@@ -28,11 +28,16 @@ class NoteProvider with ChangeNotifier {
 
   Future<void> addNote(String content) async {
     try {
+      // Create new note
       final newNote = Note.create(content: content);
+
+      // Save to database
       final id = await HiveDatabaseService.insertNote(newNote);
+
+      // Add to local list
       final finalNote = newNote.copyWith(id: id);
-      
       _notes.insert(0, finalNote);
+
       notifyListeners();
     } catch (e) {
       print('Error adding note: $e');

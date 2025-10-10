@@ -44,6 +44,20 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
   Future<void> _saveNote() async {
     final content = _contentController.text.trim();
+
+    // Don't save empty notes
+    if (content.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cannot save empty note'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
     final noteProvider = Provider.of<NoteProvider>(context, listen: false);
 
     try {
@@ -56,17 +70,22 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       }
 
       if (mounted) {
-        Navigator.of(
-          context,
-        ).pop(true); // Return true to indicate changes were made
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ Note saved'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 1),
+          ),
+        );
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
-      print('Error saving note: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to save note: ${e.toString()}'),
+            content: Text('Failed to save: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
           ),
         );
       }

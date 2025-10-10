@@ -4,10 +4,7 @@ import 'package:local_keep/providers/auth_provider.dart';
 import 'package:local_keep/screens/auth_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:local_keep/screens/change_password_screen.dart';
-import 'package:local_keep/services/backup_service.dart';
 import 'package:local_keep/services/crypto_service.dart';
-import 'package:local_keep/providers/note_provider.dart';
-import 'package:file_picker/file_picker.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -138,121 +135,6 @@ class SettingsScreen extends StatelessWidget {
       ),
       body: ListView(
         children: [
-          ListTile(
-            leading: const Icon(Icons.file_upload),
-            title: const Text('Export Encrypted Backup'),
-            subtitle: const Text('Save your notes to an encrypted .lkeep file'),
-            onTap: () async {
-              final controller = TextEditingController();
-              final ok = await showDialog<bool>(
-                context: context,
-                builder:
-                    (ctx) => AlertDialog(
-                      title: const Text('Enter Password'),
-                      content: TextField(
-                        controller: controller,
-                        obscureText: true,
-                        decoration: const InputDecoration(hintText: 'Password'),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(true),
-                          child: const Text('Continue'),
-                        ),
-                      ],
-                    ),
-              );
-              if (ok != true) return;
-              final password = controller.text;
-              final valid = await CryptoService.verifyPassword(password);
-              if (!valid && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invalid password')),
-                );
-                return;
-              }
-
-              final success = await BackupService.exportEncrypted(password);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(success ? 'Backup saved' : 'Backup failed'),
-                  ),
-                );
-              }
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.file_download),
-            title: const Text('Import Encrypted Backup'),
-            subtitle: const Text('Restore notes from an encrypted file'),
-            onTap: () async {
-              // 1) Let user choose backup file first
-              final pick = await FilePicker.platform.pickFiles(
-                type: FileType.custom,
-                allowedExtensions: ['lkeep', 'json', 'txt'],
-                withData: true,
-              );
-              if (pick == null || pick.files.isEmpty) return;
-              final file = pick.files.first;
-              if (file.bytes == null) return;
-
-              // 2) Ask for the backup file's password
-              final controller = TextEditingController();
-              final ok = await showDialog<bool>(
-                context: context,
-                builder:
-                    (ctx) => AlertDialog(
-                      title: const Text('Enter Password of Backup File'),
-                      content: TextField(
-                        controller: controller,
-                        obscureText: true,
-                        decoration: const InputDecoration(
-                          hintText: 'Password used when exporting this backup',
-                        ),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(false),
-                          child: const Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.of(ctx).pop(true),
-                          child: const Text('Continue'),
-                        ),
-                      ],
-                    ),
-              );
-              if (ok != true) return;
-              final password = controller.text.trim();
-
-              // 3) Decrypt with provided password, then save (re-encrypted) into DB
-              final success = await BackupService.importEncryptedFromBytes(
-                file.bytes!,
-                password,
-              );
-              if (success && context.mounted) {
-                // Refresh notes in UI
-                await Provider.of<NoteProvider>(
-                  context,
-                  listen: false,
-                ).fetchNotes();
-              }
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success ? 'Import completed' : 'Import failed',
-                    ),
-                  ),
-                );
-              }
-            },
-          ),
           ListTile(
             leading: const Icon(Icons.password),
             title: const Text('Change Password'),
