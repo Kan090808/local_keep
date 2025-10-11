@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:local_keep/screens/auth_screen.dart';
@@ -22,8 +23,12 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   static final GlobalKey<NavigatorState> navigatorKey =
       GlobalKey<NavigatorState>();
-  
+
   final _lifecycleService = AppLifecycleService();
+  Timer? _lockTimer;
+
+  // Lock app after 30 seconds of being in background
+  static const Duration _lockDelay = Duration(seconds: 30);
 
   @override
   void initState() {
@@ -33,6 +38,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _lockTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -44,20 +50,25 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         currentContext,
         listen: false,
       );
-      
-      // Don't lock if currently picking a file
-      if (_lifecycleService.isPickingFile) {
-        print('Skipping lock: File picking in progress');
+
+      // Don't lock if currently picking or previewing a file
+      if (_lifecycleService.shouldSkipLock) {
+        if (_lifecycleService.isPickingFile) {
+          print('Skipping lock: File picking in progress');
+        }
+        if (_lifecycleService.isPreviewingFile) {
+          print('Skipping lock: File preview in progress');
+        }
         return;
       }
-      
+
       // Only lock if a password has been set
       final hasPassword = await authProvider.isAppInitialized();
       if (!hasPassword) {
         print('Skipping lock: No password set');
         return; // Don't lock if no password is set
       }
-      
+
       print('Locking app');
       authProvider.lockApp();
       navigatorKey.currentState?.pushAndRemoveUntil(
@@ -70,12 +81,36 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    
+
     print('App lifecycle state changed to: $state');
-    
+
     if (state == AppLifecycleState.paused) {
-      // App went to background
+      // App went to background - start 30 second timer
+      _startLockTimer();
+    } else if (state == AppLifecycleState.resumed) {
+      // App came to foreground - cancel timer
+      _cancelLockTimer();
+    }
+  }
+
+  void _startLockTimer() {
+    // Cancel any existing timer
+    _lockTimer?.cancel();
+
+    print('Starting lock timer (${_lockDelay.inSeconds} seconds)');
+
+    // Start new timer
+    _lockTimer = Timer(_lockDelay, () {
+      print('Lock timer expired - checking if should lock');
       _triggerLock();
+    });
+  }
+
+  void _cancelLockTimer() {
+    if (_lockTimer != null && _lockTimer!.isActive) {
+      print('Cancelling lock timer - app resumed');
+      _lockTimer?.cancel();
+      _lockTimer = null;
     }
   }
 

@@ -41,6 +41,47 @@ class _MediaViewerState extends State<MediaViewer> {
     super.dispose();
   }
 
+  Future<void> _openCurrentFile() async {
+    final media = widget.mediaList[_currentIndex];
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final success = await MediaService.openFileWithNativePreview(
+        media,
+        widget.password,
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+
+        if (!success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('無法開啟此檔案'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('開啟檔案時發生錯誤: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -52,6 +93,13 @@ class _MediaViewerState extends State<MediaViewer> {
           '${_currentIndex + 1} / ${widget.mediaList.length}',
           style: const TextStyle(color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.open_in_new),
+            tooltip: '用系統應用打開',
+            onPressed: _openCurrentFile,
+          ),
+        ],
       ),
       body: PhotoViewGallery.builder(
         scrollPhysics: const BouncingScrollPhysics(),

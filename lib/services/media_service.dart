@@ -11,6 +11,7 @@ import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/services/crypto_service.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
 import 'package:local_keep/services/app_lifecycle_service.dart';
+import 'package:local_keep/services/file_preview_service.dart';
 
 class MediaService {
   static final _uuid = const Uuid();
@@ -31,7 +32,7 @@ class MediaService {
     final lifecycleService = AppLifecycleService();
     try {
       lifecycleService.startFilePicking();
-      
+
       final picker = ImagePicker();
       final images = await picker.pickMultiImage(
         maxWidth: 2048,
@@ -66,7 +67,7 @@ class MediaService {
     final lifecycleService = AppLifecycleService();
     try {
       lifecycleService.startFilePicking();
-      
+
       final picker = ImagePicker();
       final video = await picker.pickVideo(source: ImageSource.gallery);
 
@@ -87,7 +88,7 @@ class MediaService {
     final lifecycleService = AppLifecycleService();
     try {
       lifecycleService.startFilePicking();
-      
+
       final result = await FilePicker.platform.pickFiles(
         allowMultiple: true,
         type: FileType.any,
@@ -336,5 +337,54 @@ class MediaService {
     if (mimeType.contains('text')) return '📝';
 
     return '📄';
+  }
+
+  /// Open file with native iOS/Android preview
+  /// Decrypts the file and saves it to a temporary location, then opens it with native viewer
+  static Future<bool> openFileWithNativePreview(
+    MediaAttachment media,
+    String password,
+  ) async {
+    final lifecycleService = AppLifecycleService();
+    try {
+      // Set flag to prevent auto-lock during file preview
+      lifecycleService.startFilePreviewing();
+
+      // Check if native preview is available (iOS or Android)
+      if (!FilePreviewService.isAvailable) {
+        print('⚠ Native file preview not available on this platform');
+        return false;
+      }
+
+      // Decrypt the file
+      final decryptedBytes = await decryptMedia(media, password);
+
+      // Get temporary directory
+      final tempDir = await getTemporaryDirectory();
+      final tempFilePath = '${tempDir.path}/${media.fileName}';
+
+      // Save decrypted file to temporary location
+      final tempFile = File(tempFilePath);
+      await tempFile.writeAsBytes(decryptedBytes);
+
+      print('✓ Temporary file created: $tempFilePath');
+
+      // Use native preview service
+      final success = await FilePreviewService.previewFile(tempFilePath);
+
+      if (success) {
+        print('✓ File opened successfully with native preview');
+      } else {
+        print('⚠ Failed to open file with native preview');
+      }
+
+      return success;
+    } catch (e) {
+      print('✗ Error opening file with native preview: $e');
+      return false;
+    } finally {
+      // Always reset flag, even if there's an error
+      lifecycleService.endFilePreviewing();
+    }
   }
 }

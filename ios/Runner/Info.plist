@@ -53,5 +53,11 @@
 	<string>需要訪問相機來拍攝照片和影片</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>需要訪問麥克風來錄製影片音頻</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>UISupportsDocumentBrowser</key>
+	<true/>
 </dict>
 </plist>
