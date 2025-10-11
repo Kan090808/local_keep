@@ -47,20 +47,50 @@ import UIKit
     }
     
     DispatchQueue.main.async {
-      let documentController = UIDocumentInteractionController(url: fileURL)
-      documentController.delegate = controller as? UIDocumentInteractionControllerDelegate
+      // Detect file type based on extension
+      let fileExtension = fileURL.pathExtension.lowercased()
+      let imageExtensions = ["jpg", "jpeg", "png", "gif", "bmp", "heic", "heif", "webp"]
+      let videoExtensions = ["mp4", "mov", "m4v", "avi", "mkv", "wmv", "flv", "webm"]
       
-      // Present preview
-      if documentController.presentPreview(animated: true) {
-        result(true)
+      let isImage = imageExtensions.contains(fileExtension)
+      let isVideo = videoExtensions.contains(fileExtension)
+      
+      // For images and videos, open with system browser/viewer using UIApplication
+      if isImage || isVideo {
+        if UIApplication.shared.canOpenURL(fileURL) {
+          UIApplication.shared.open(fileURL, options: [:]) { success in
+            result(success)
+          }
+        } else {
+          // Fallback to document interaction controller if direct open fails
+          let documentController = UIDocumentInteractionController(url: fileURL)
+          documentController.delegate = controller as? UIDocumentInteractionControllerDelegate
+          
+          if documentController.presentOptionsMenu(from: controller.view.bounds, in: controller.view, animated: true) {
+            result(true)
+          } else {
+            result(FlutterError(code: "PREVIEW_FAILED",
+                              message: "Cannot open this file type",
+                              details: nil))
+          }
+        }
       } else {
-        // If preview fails, try to present options menu
-        if documentController.presentOptionsMenu(from: controller.view.bounds, in: controller.view, animated: true) {
+        // For other file types, use the document interaction controller preview
+        let documentController = UIDocumentInteractionController(url: fileURL)
+        documentController.delegate = controller as? UIDocumentInteractionControllerDelegate
+        
+        // Present preview
+        if documentController.presentPreview(animated: true) {
           result(true)
         } else {
-          result(FlutterError(code: "PREVIEW_FAILED",
-                            message: "Cannot preview or open this file type",
-                            details: nil))
+          // If preview fails, try to present options menu
+          if documentController.presentOptionsMenu(from: controller.view.bounds, in: controller.view, animated: true) {
+            result(true)
+          } else {
+            result(FlutterError(code: "PREVIEW_FAILED",
+                              message: "Cannot preview or open this file type",
+                              details: nil))
+          }
         }
       }
     }
