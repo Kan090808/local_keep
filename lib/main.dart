@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:local_keep/screens/auth_screen.dart';
+import 'package:local_keep/screens/welcome_screen.dart';
 import 'package:local_keep/providers/auth_provider.dart';
 import 'package:local_keep/providers/note_provider.dart';
 import 'package:local_keep/services/hive_database_service.dart';
@@ -157,9 +158,11 @@ class AppEntryPoint extends StatelessWidget {
         }
 
         if (snapshot.data == true) {
+          // Password is already set up - go to unlock screen
           return const AuthScreen();
         } else {
-          return const AuthScreen(isFirstTime: true);
+          // No password set up yet - show welcome screen
+          return const WelcomeScreen();
         }
       },
     );

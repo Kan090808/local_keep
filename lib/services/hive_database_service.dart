@@ -193,6 +193,12 @@ class HiveDatabaseService {
     }
   }
 
+  /// Return raw encrypted notes as stored in Hive (used for backups)
+  static Future<List<Note>> getNotesRaw() async {
+    final box = await _getNotesBox();
+    return List<Note>.from(box.values);
+  }
+
   /// Update an existing note
   static Future<void> updateNote(Note note) async {
     if (note.id == null) {
@@ -237,6 +243,25 @@ class HiveDatabaseService {
       print('✗ Error deleting note: $e');
       rethrow;
     }
+  }
+
+  /// Replace all notes in the encrypted box with the provided collection
+  static Future<void> replaceAllNotesRaw(List<Note> notes) async {
+    final box = await _getNotesBox();
+    await box.clear();
+
+    final Map<String, Note> entries = {};
+    for (final note in notes) {
+      if (note.id != null) {
+        entries[note.id!] = note;
+      }
+    }
+
+    if (entries.isNotEmpty) {
+      await box.putAll(entries);
+    }
+
+    print('✓ Restored ${entries.length} notes into Hive');
   }
 
   /// Clear all notes

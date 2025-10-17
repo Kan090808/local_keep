@@ -27,6 +27,47 @@ class MediaService {
     return mediaDir;
   }
 
+  /// Read an encrypted media or thumbnail file by its identifier
+  static Future<Uint8List?> readEncryptedMediaFile(String fileId) async {
+    final mediaDir = await _getMediaDirectory();
+    final targetFile = File('${mediaDir.path}/$fileId.enc');
+
+    if (!await targetFile.exists()) {
+      return null;
+    }
+
+    return await targetFile.readAsBytes();
+  }
+
+  /// Persist an encrypted media or thumbnail file to storage
+  static Future<void> writeEncryptedMediaFile(
+    String fileId,
+    Uint8List data,
+  ) async {
+    final mediaDir = await _getMediaDirectory();
+    final targetFile = File('${mediaDir.path}/$fileId.enc');
+    await targetFile.writeAsBytes(data, flush: true);
+  }
+
+  /// Remove every stored encrypted media file (used before imports)
+  static Future<void> clearAllMedia() async {
+    final mediaDir = await _getMediaDirectory();
+    if (!await mediaDir.exists()) {
+      return;
+    }
+
+    final entries = mediaDir.list(recursive: false, followLinks: false);
+    await for (final entity in entries) {
+      if (entity is File) {
+        try {
+          await entity.delete();
+        } catch (e) {
+          print('✗ Error deleting media file during clear: $e');
+        }
+      }
+    }
+  }
+
   /// Pick images from gallery
   static Future<List<MediaAttachment>?> pickImages(String password) async {
     final lifecycleService = AppLifecycleService();
