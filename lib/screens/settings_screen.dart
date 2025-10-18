@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:local_keep/providers/auth_provider.dart';
-import 'package:local_keep/screens/auth_screen.dart';
+import 'package:local_keep/screens/welcome_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:local_keep/screens/change_password_screen.dart';
 import 'package:local_keep/services/backup_service.dart';
@@ -103,14 +103,11 @@ class SettingsScreen extends StatelessWidget {
       // Also wipe stored password hash and salt
       await CryptoService.clearAll();
       // Resetting password state might involve more steps depending on CryptoService
-      // For now, we just navigate back to AuthScreen for first-time setup
+      // Navigate back to WelcomeScreen to show the onboarding flow again
       if (context.mounted) {
-        // Navigate to AuthScreen for password reset/setup
-        // TODO: Ensure AuthScreen handles the reset flow correctly (isFirstTime might need adjustment)
+        // Navigate to WelcomeScreen for fresh start
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => const AuthScreen(isFirstTime: true),
-          ),
+          MaterialPageRoute(builder: (_) => const WelcomeScreen()),
           (Route<dynamic> route) => false, // Remove all previous routes
         );
       }
