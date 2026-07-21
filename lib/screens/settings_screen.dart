@@ -7,8 +7,15 @@ import 'package:local_keep/screens/change_password_screen.dart';
 import 'package:local_keep/services/backup_service.dart';
 import 'package:local_keep/services/crypto_service.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _isLoading = false;
 
   // TODO: Replace with your actual URLs
   final String _githubUrl = 'https://github.com/Kan090808/local_keep';
@@ -95,32 +102,44 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _resetAllData(BuildContext context) async {
-    // Consider showing a loading indicator here
+    setState(() {
+      _isLoading = true;
+    });
+
+    _showLoadingDialog(context, 'Resetting all data...');
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     try {
-      // TODO: Ensure AuthProvider has deleteAllNotes and it handles password reset state
       await authProvider.deleteAllNotes();
-      // Also wipe stored password hash and salt
       await CryptoService.clearAll();
-      // Resetting password state might involve more steps depending on CryptoService
-      // Navigate back to WelcomeScreen to show the onboarding flow again
+
       if (context.mounted) {
-        // Navigate to WelcomeScreen for fresh start
+        Navigator.of(
+          context,
+          rootNavigator: true,
+        ).pop(); // Close loading dialog
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-          (Route<dynamic> route) => false, // Remove all previous routes
+          (Route<dynamic> route) => false,
         );
       }
     } catch (e) {
-      // Handle error, e.g., show a snackbar
       print('Error resetting data: $e');
       if (context.mounted) {
+        Navigator.of(
+          context,
+          rootNavigator: true,
+        ).pop(); // Close loading dialog
+        setState(() {
+          _isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error resetting data: ${e.toString()}')),
+          SnackBar(
+            content: Text('Error resetting data: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
-    } finally {
-      // Hide loading indicator if shown
     }
   }
 
@@ -207,6 +226,10 @@ class SettingsScreen extends StatelessWidget {
       return;
     }
 
+    setState(() {
+      _isLoading = true;
+    });
+
     _showLoadingDialog(context, 'Creating encrypted backup...');
 
     try {
@@ -214,6 +237,9 @@ class SettingsScreen extends StatelessWidget {
       if (!context.mounted) return;
 
       Navigator.of(context, rootNavigator: true).pop();
+      setState(() {
+        _isLoading = false;
+      });
 
       if (savedPath == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -222,69 +248,104 @@ class SettingsScreen extends StatelessWidget {
         return;
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Backup saved: $savedPath')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✓ Backup saved: $savedPath'),
+          backgroundColor: Colors.green,
+        ),
+      );
     } catch (e) {
       if (!context.mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
+      setState(() {
+        _isLoading = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to create backup: ${e.toString()}')),
+        SnackBar(
+          content: Text('Failed to create backup: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-      ),
-      body: ListView(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.password),
-            title: const Text('Change Password'),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ChangePasswordScreen()),
-              );
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.upload_file),
-            title: const Text('Export Backup'),
-            subtitle: const Text('Create encrypted backup with media'),
-            onTap: () => _exportBackup(context),
-          ),
-          ListTile(
-            leading: Icon(Icons.delete_forever, color: Colors.red[700]),
-            title: Text(
-              'Reset Password & Data',
-              style: TextStyle(color: Colors.red[700]),
+    return PopScope(
+      canPop: !_isLoading,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+
+        if (_isLoading) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot go back while processing...'),
+              duration: Duration(milliseconds: 500),
             ),
-            onTap: () => _showResetConfirmationDialog(context),
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.code), // Or a GitHub icon
-            title: const Text('GitHub Project'),
-            onTap: () {
-              _launchUrl(context, _githubUrl); // Use the launch function
-            },
-          ),
-          ListTile(
-            leading: const Icon(
-              Icons.favorite,
-              color: Colors.pink,
-            ), // Or a donation icon
-            title: const Text('Donate'),
-            onTap: () {
-              _launchUrl(context, _donateUrl); // Use the launch function
-            },
-          ),
-        ],
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Settings'),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+        ),
+        body: ListView(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.password),
+              title: const Text('Change Password'),
+              enabled: !_isLoading,
+              onTap:
+                  _isLoading
+                      ? null
+                      : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ChangePasswordScreen(),
+                          ),
+                        );
+                      },
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload_file),
+              title: const Text('Export Notes'),
+              subtitle: const Text('Backup file is encrypted, contains media'),
+              enabled: !_isLoading,
+              onTap: _isLoading ? null : () => _exportBackup(context),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_forever,
+                color: _isLoading ? Colors.grey : Colors.red[700],
+              ),
+              title: Text(
+                'Reset Password & Data',
+                style: TextStyle(
+                  color: _isLoading ? Colors.grey : Colors.red[700],
+                ),
+              ),
+              enabled: !_isLoading,
+              onTap:
+                  _isLoading
+                      ? null
+                      : () => _showResetConfirmationDialog(context),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.code),
+              title: const Text('GitHub Project'),
+              enabled: !_isLoading,
+              onTap: _isLoading ? null : () => _launchUrl(context, _githubUrl),
+            ),
+            ListTile(
+              leading: const Icon(Icons.favorite, color: Colors.pink),
+              title: const Text('Donate'),
+              enabled: !_isLoading,
+              onTap: _isLoading ? null : () => _launchUrl(context, _donateUrl),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -99,42 +99,58 @@ class _NotesScreenState extends State<NotesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Local Keep'),
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: _goToSettings,
-            tooltip: 'Settings',
-          ),
-        ],
-      ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : Selector<NoteProvider, List<Note>>(
-                selector: (context, noteProvider) => noteProvider.notes,
-                builder: (context, notes, child) {
-                  if (notes.isEmpty) {
-                    return const Center(
-                      child: Text('No notes yet. Tap + to create one.'),
-                    );
-                  }
+    return PopScope(
+      canPop: !_isLoading,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
 
-                  return Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: _buildListView(notes),
-                  );
-                },
-              ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _createNote,
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        tooltip: 'Add Note',
-        child: const Icon(Icons.add),
+        // Prevent popping while loading
+        if (_isLoading) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot navigate while loading notes...'),
+              duration: Duration(milliseconds: 500),
+            ),
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Local Keep'),
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: _isLoading ? null : _goToSettings,
+              tooltip: 'Settings',
+            ),
+          ],
+        ),
+        body:
+            _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : Selector<NoteProvider, List<Note>>(
+                  selector: (context, noteProvider) => noteProvider.notes,
+                  builder: (context, notes, child) {
+                    if (notes.isEmpty) {
+                      return const Center(
+                        child: Text('No notes yet. Tap + to create one.'),
+                      );
+                    }
+
+                    return Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: _buildListView(notes),
+                    );
+                  },
+                ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _isLoading ? null : _createNote,
+          backgroundColor: Colors.teal,
+          foregroundColor: Colors.white,
+          tooltip: 'Add Note',
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }

@@ -22,6 +22,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   final _contentController = TextEditingController();
   final _focusNode = FocusNode();
   bool _isEdited = false;
+  bool _isSaving = false;
   String _lastSavedContent = '';
   Timer? _saveTimer;
   List<MediaAttachment> _mediaAttachments = [];
@@ -49,6 +50,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   Future<void> _saveNote() async {
+    if (_isSaving) return; // Prevent multiple simultaneous saves
+
     final content = _contentController.text.trim();
 
     // Don't save completely empty notes (no content and no media)
@@ -63,6 +66,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       }
       return;
     }
+
+    setState(() {
+      _isSaving = true;
+    });
 
     final noteProvider = Provider.of<NoteProvider>(context, listen: false);
 
@@ -90,10 +97,17 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
             duration: Duration(seconds: 1),
           ),
         );
+        setState(() {
+          _isEdited = false;
+          _isSaving = false;
+        });
         Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to save: $e'),
@@ -232,9 +246,22 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_isEdited,
+      canPop: !_isEdited && !_isSaving,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
+
+        // Prevent popping if currently saving
+        if (_isSaving) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot go back while saving...'),
+              duration: Duration(seconds: 1),
+            ),
+          );
+          return;
+        }
+
+        // Show confirmation if there are unsaved edits
         final shouldPop =
             await showDialog<bool>(
               context: context,
@@ -272,103 +299,129 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
             IconButton(
               icon: const Icon(Icons.attach_file),
               tooltip: 'Add Media',
-              onPressed: _showMediaOptions,
+              onPressed: _isSaving ? null : _showMediaOptions,
             ),
             IconButton(
               icon: const Icon(Icons.copy),
               tooltip: 'Copy',
-              onPressed: _copyNote,
+              onPressed: _isSaving ? null : _copyNote,
             ),
             if (widget.note != null) ...[
               IconButton(
                 icon: const Icon(Icons.delete),
                 tooltip: 'Delete',
-                onPressed: _deleteNote,
+                onPressed: _isSaving ? null : _deleteNote,
               ),
             ],
             IconButton(
-              icon: const Icon(Icons.save),
+              icon:
+                  _isSaving
+                      ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : const Icon(Icons.save),
               tooltip: 'Save',
-              onPressed: _saveNote,
+              onPressed: _isSaving ? null : _saveNote,
             ),
           ],
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment:
-                CrossAxisAlignment.start, // Align date to the start
-            children: [
-              if (widget.note != null) // Only show date for existing notes
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: Text(
-                    'Edited: ${widget.note!.formattedDate}', // Format and display the date
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                  ),
-                ),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextField(
-                        controller: _contentController,
-                        focusNode: _focusNode,
-                        decoration: const InputDecoration(
-                          hintText: 'Note content',
-                          hintStyle: TextStyle(color: Colors.grey),
-                          border: InputBorder.none,
-                        ),
-                        style: const TextStyle(fontSize: 16),
-                        maxLines: null,
-                        minLines: 5,
-                        keyboardType: TextInputType.multiline,
-                        onChanged: (value) {
-                          // Enhanced change detection for better performance
-                          final contentLength = value.length;
-                          final lastSavedLength = _lastSavedContent.length;
-                          final hasSignificantChange =
-                              (lastSavedLength - contentLength).abs() > 3;
-                          final crossedWordBoundary =
-                              (contentLength ~/ 20) != (lastSavedLength ~/ 20);
-
-                          // More intelligent edit state management
-                          if (!_isEdited && (value != _lastSavedContent)) {
-                            setState(() => _isEdited = true);
-                          }
-
-                          // Auto-save existing notes with smart debouncing
-                          if (widget.note != null &&
-                              (hasSignificantChange || crossedWordBoundary)) {
-                            final noteProvider = Provider.of<NoteProvider>(
-                              context,
-                              listen: false,
-                            );
-                            noteProvider.updateNoteDebounced(
-                              widget.note!,
-                              value,
-                              mediaAttachments: _mediaAttachments,
-                            );
-                            _lastSavedContent = value;
-                          }
-                        },
+        body: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (widget.note != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8.0),
+                      child: Text(
+                        'Edited: ${widget.note!.formattedDate}',
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
                       ),
-                      const SizedBox(height: 16),
-                      // Media Gallery
-                      if (_mediaAttachments.isNotEmpty) ...[
-                        MediaGalleryWidget(
-                          mediaAttachments: _mediaAttachments,
-                          password: HiveDatabaseService.getPassword() ?? '',
-                          onDeleteMedia: _deleteMedia,
-                        ),
-                      ],
-                    ],
+                    ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          TextField(
+                            controller: _contentController,
+                            focusNode: _focusNode,
+                            enabled: !_isSaving,
+                            decoration: const InputDecoration(
+                              hintText: 'Note content',
+                              hintStyle: TextStyle(color: Colors.grey),
+                              border: InputBorder.none,
+                            ),
+                            style: const TextStyle(fontSize: 16),
+                            maxLines: null,
+                            minLines: 5,
+                            keyboardType: TextInputType.multiline,
+                            onChanged: (value) {
+                              final contentLength = value.length;
+                              final lastSavedLength = _lastSavedContent.length;
+                              final hasSignificantChange =
+                                  (lastSavedLength - contentLength).abs() > 3;
+                              final crossedWordBoundary =
+                                  (contentLength ~/ 20) !=
+                                  (lastSavedLength ~/ 20);
+
+                              if (!_isEdited && (value != _lastSavedContent)) {
+                                setState(() => _isEdited = true);
+                              }
+
+                              if (widget.note != null &&
+                                  (hasSignificantChange ||
+                                      crossedWordBoundary)) {
+                                final noteProvider = Provider.of<NoteProvider>(
+                                  context,
+                                  listen: false,
+                                );
+                                noteProvider.updateNoteDebounced(
+                                  widget.note!,
+                                  value,
+                                  mediaAttachments: _mediaAttachments,
+                                );
+                                _lastSavedContent = value;
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          if (_mediaAttachments.isNotEmpty) ...[
+                            MediaGalleryWidget(
+                              mediaAttachments: _mediaAttachments,
+                              password: HiveDatabaseService.getPassword() ?? '',
+                              onDeleteMedia: _deleteMedia,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Loading overlay during save
+            if (_isSaving)
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () {
+                    // Prevent dismissal
+                  },
+                  child: Container(
+                    color: Colors.black.withOpacity(0.3),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.teal),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );

@@ -5,11 +5,8 @@ import 'package:local_keep/screens/notes_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   final bool isFirstTime;
-  
-  const AuthScreen({
-    super.key,
-    this.isFirstTime = false,
-  });
+
+  const AuthScreen({super.key, this.isFirstTime = false});
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -29,10 +26,10 @@ class _AuthScreenState extends State<AuthScreen> {
     _passwordFocusNode = FocusNode(); // Initialize FocusNode
     // Request focus after the first frame is built
     WidgetsBinding.instance.addPostFrameCallback((_) {
-       // Check if mounted before requesting focus
-       if (mounted) {
-         _passwordFocusNode.requestFocus();
-       }
+      // Check if mounted before requesting focus
+      if (mounted) {
+        _passwordFocusNode.requestFocus();
+      }
     });
   }
 
@@ -67,15 +64,16 @@ class _AuthScreenState extends State<AuthScreen> {
       if (success) {
         if (mounted) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const NotesScreen())
+            MaterialPageRoute(builder: (_) => const NotesScreen()),
           );
         }
       } else {
         if (mounted) {
           setState(() {
-            _errorMessage = widget.isFirstTime
-                ? 'Failed to create password'
-                : 'Incorrect password';
+            _errorMessage =
+                widget.isFirstTime
+                    ? 'Failed to create password'
+                    : 'Incorrect password';
           });
         }
       }
@@ -97,6 +95,20 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar:
+          widget.isFirstTime
+              ? AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                ),
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                foregroundColor: Colors.teal,
+              )
+              : null,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -105,14 +117,10 @@ class _AuthScreenState extends State<AuthScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(
-                  Icons.lock_outline,
-                  size: 80,
-                  color: Colors.teal,
-                ),
+                const Icon(Icons.lock_outline, size: 80, color: Colors.teal),
                 const SizedBox(height: 32),
                 Text(
-                  widget.isFirstTime 
+                  widget.isFirstTime
                       ? 'Create a Secure Password'
                       : 'Enter Your Password',
                   style: Theme.of(context).textTheme.headlineSmall,
@@ -184,9 +192,14 @@ class _AuthScreenState extends State<AuthScreen> {
                       backgroundColor: Colors.teal,
                       foregroundColor: Colors.white,
                     ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(widget.isFirstTime ? 'Create Password' : 'Unlock'),
+                    child:
+                        _isLoading
+                            ? const CircularProgressIndicator(
+                              color: Colors.white,
+                            )
+                            : Text(
+                              widget.isFirstTime ? 'Create Password' : 'Unlock',
+                            ),
                   ),
                 ),
               ],
