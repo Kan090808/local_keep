@@ -12,7 +12,6 @@ void main() {
     const text = 'secure note 🔐';
     final sealed = CryptoService.encryptWithSaltV2(text, password, salt);
 
-    expect(CryptoService.isV2CipherText(sealed), isTrue);
     expect(CryptoService.decryptWithSaltV2(sealed, password, salt), text);
 
     final bytes = base64.decode(sealed);

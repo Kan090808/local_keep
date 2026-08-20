@@ -2,13 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:local_keep/services/auto_lock_coordinator.dart';
 
 void main() {
-  test('operation leases prevent locking until all leases end', () {
+  test('file operations prevent locking while active', () {
     final coordinator = AutoLockCoordinator();
 
     expect(coordinator.shouldSkipLock, isFalse);
-    final release = coordinator.beginOperation();
+    coordinator.setPickingFile(true);
     expect(coordinator.shouldSkipLock, isTrue);
-    release();
+    coordinator.setPickingFile(false);
     expect(coordinator.shouldSkipLock, isFalse);
   });
 }

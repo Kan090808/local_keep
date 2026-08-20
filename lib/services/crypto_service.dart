@@ -14,7 +14,6 @@ class CryptoService {
 
   static const _saltKey = 'encryption_salt';
   static const _passwordHashKey = 'password_hash';
-  static const _kdfIterationsKey = 'kdf_iterations';
 
   static const v2Iterations = 210000;
   static const v2KeyLength = 32;
@@ -71,15 +70,11 @@ class CryptoService {
     return Uint8List.fromList(derived.sublist(0, dkLen));
   }
 
-  static Uint8List deriveMasterKeyV2(
-    String password,
-    Uint8List salt, {
-    int iterations = v2Iterations,
-  }) {
+  static Uint8List deriveMasterKeyV2(String password, Uint8List salt) {
     return pbkdf2HmacSha256(
       password: utf8.encode(password),
       salt: salt,
-      iterations: iterations,
+      iterations: v2Iterations,
       dkLen: v2KeyLength,
     );
   }
@@ -107,14 +102,6 @@ class CryptoService {
     return true;
   }
 
-  static bool isV2CipherText(String encoded) {
-    try {
-      return isV2CipherBytes(base64.decode(encoded));
-    } catch (_) {
-      return false;
-    }
-  }
-
   static Future<Uint8List> getOrCreateSalt() async {
     final storedSalt = await _secureStorage.read(key: _saltKey);
     if (storedSalt != null && storedSalt.isNotEmpty) {
@@ -131,28 +118,13 @@ class CryptoService {
     return base64.decode(storedSalt);
   }
 
-  static Future<int> getKdfIterations() async {
-    final raw = await _secureStorage.read(key: _kdfIterationsKey);
-    if (raw == null || raw.isEmpty) return v2Iterations;
-    return int.tryParse(raw) ?? v2Iterations;
-  }
-
-  static Future<void> setKdfIterations(int iterations) async {
-    await _secureStorage.write(
-      key: _kdfIterationsKey,
-      value: iterations.toString(),
-    );
-  }
-
   static Future<void> setupPassword(String password) async {
     final salt = await getOrCreateSalt();
-    final iterations = await getKdfIterations();
-    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    final master = deriveMasterKeyV2(password, salt);
     await _secureStorage.write(
       key: _passwordHashKey,
       value: base64.encode(verifierV2(master)),
     );
-    await setKdfIterations(iterations);
   }
 
   static Future<bool> verifyPassword(String password) async {
@@ -160,11 +132,7 @@ class CryptoService {
     final salt = await readSalt();
     if (storedHash == null || salt == null) return false;
 
-    final master = deriveMasterKeyV2(
-      password,
-      salt,
-      iterations: await getKdfIterations(),
-    );
+    final master = deriveMasterKeyV2(password, salt);
     return constantTimeStringEquals(
       base64.encode(verifierV2(master)),
       storedHash,
@@ -176,60 +144,39 @@ class CryptoService {
   }
 
   static Future<Map<String, String>> exportCryptoMetadata() async {
-    return {
-      'salt': (await _secureStorage.read(key: _saltKey)) ?? '',
-      'kdf_iterations': (await getKdfIterations()).toString(),
-    };
+    return {'salt': (await _secureStorage.read(key: _saltKey)) ?? ''};
   }
 
-  static Future<void> importCryptoMetadata({
-    required String saltBase64,
-    int? kdfIterations,
-  }) async {
+  static Future<void> importCryptoMetadata({required String saltBase64}) async {
     await _secureStorage.write(key: _saltKey, value: saltBase64);
-    if (kdfIterations != null) {
-      await setKdfIterations(kdfIterations);
-    }
   }
 
   static Future<void> clearAll() async {
     await _secureStorage.delete(key: _passwordHashKey);
     await _secureStorage.delete(key: _saltKey);
-    await _secureStorage.delete(key: _kdfIterationsKey);
   }
 
   static Future<String> encrypt(String data, String password) async {
     if (data.isEmpty) return '';
     final salt = await getOrCreateSalt();
-    return encryptWithSaltV2(
-      data,
-      password,
-      base64.encode(salt),
-      iterations: await getKdfIterations(),
-    );
+    return encryptWithSaltV2(data, password, base64.encode(salt));
   }
 
   static Future<String> decrypt(String encryptedData, String password) async {
     if (encryptedData.isEmpty) return '';
     final salt = await readSalt();
     if (salt == null) throw StateError('Encryption salt missing.');
-    return decryptWithSaltV2(
-      encryptedData,
-      password,
-      base64.encode(salt),
-      iterations: await getKdfIterations(),
-    );
+    return decryptWithSaltV2(encryptedData, password, base64.encode(salt));
   }
 
   static String encryptWithSaltV2(
     String data,
     String password,
-    String saltBase64, {
-    int iterations = v2Iterations,
-  }) {
+    String saltBase64,
+  ) {
     if (data.isEmpty) return '';
     final salt = base64.decode(saltBase64);
-    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    final master = deriveMasterKeyV2(password, salt);
     return base64.encode(
       encryptBytesV2(
         Uint8List.fromList(utf8.encode(data)),
@@ -242,12 +189,11 @@ class CryptoService {
   static String decryptWithSaltV2(
     String encryptedData,
     String password,
-    String saltBase64, {
-    int iterations = v2Iterations,
-  }) {
+    String saltBase64,
+  ) {
     if (encryptedData.isEmpty) return '';
     final salt = base64.decode(saltBase64);
-    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    final master = deriveMasterKeyV2(password, salt);
     return utf8.decode(
       decryptBytesV2(
         base64.decode(encryptedData),
@@ -261,24 +207,18 @@ class CryptoService {
     if (data.isEmpty) return '';
     final salt = await getOrCreateSalt();
     return base64.encode(
-      encryptBytesWithSalt(
-        data,
-        password,
-        base64.encode(salt),
-        iterations: await getKdfIterations(),
-      ),
+      encryptBytesWithSalt(data, password, base64.encode(salt)),
     );
   }
 
   static Uint8List encryptBytesWithSalt(
     Uint8List data,
     String password,
-    String saltBase64, {
-    int iterations = v2Iterations,
-  }) {
+    String saltBase64,
+  ) {
     if (data.isEmpty) return Uint8List(0);
     final salt = base64.decode(saltBase64);
-    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    final master = deriveMasterKeyV2(password, salt);
     return encryptBytesV2(data, contentKeyV2(master), macKeyV2(master));
   }
 
@@ -293,19 +233,17 @@ class CryptoService {
       base64.decode(encryptedData),
       password,
       base64.encode(salt),
-      iterations: await getKdfIterations(),
     );
   }
 
   static Uint8List decryptBytesWithSalt(
     Uint8List encryptedBytes,
     String password,
-    String saltBase64, {
-    int iterations = v2Iterations,
-  }) {
+    String saltBase64,
+  ) {
     if (encryptedBytes.isEmpty) return Uint8List(0);
     final salt = base64.decode(saltBase64);
-    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    final master = deriveMasterKeyV2(password, salt);
     return decryptBytesV2(
       encryptedBytes,
       contentKeyV2(master),

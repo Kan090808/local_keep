@@ -77,9 +77,6 @@ class BackupService {
     final wrapper = <String, dynamic>{
       'version': backupVersionV2,
       'salt': salt,
-      'kdf_iterations':
-          saltMetadata['kdf_iterations'] ??
-          CryptoService.v2Iterations.toString(),
       'payload': encryptedContent,
     };
 
@@ -123,13 +120,11 @@ class BackupService {
     final parsed = _parseBackupWrapper(fileBytes);
     final salt = parsed.salt;
     final payload = parsed.payload;
-    final iterations = parsed.kdfIterations;
 
     final decryptedJson = CryptoService.decryptWithSaltV2(
       payload,
       restorePassword,
       salt,
-      iterations: iterations,
     );
 
     final payloadMap = _decodePayloadMap(decryptedJson);
@@ -142,7 +137,6 @@ class BackupService {
       mediaData: mediaData,
       password: restorePassword,
       salt: salt,
-      iterations: iterations,
     );
 
     final restoredMedia = <String, Uint8List>{};
@@ -155,10 +149,7 @@ class BackupService {
     }
 
     // Import salt first so hive open / encrypt paths have consistent material.
-    await CryptoService.importCryptoMetadata(
-      saltBase64: salt,
-      kdfIterations: iterations,
-    );
+    await CryptoService.importCryptoMetadata(saltBase64: salt);
 
     await CryptoService.setupPassword(restorePassword);
     await HiveDatabaseService.ensureOpen(restorePassword);
@@ -181,13 +172,11 @@ class BackupService {
     final parsed = _parseBackupWrapper(fileBytes);
     final salt = parsed.salt;
     final payload = parsed.payload;
-    final iterations = parsed.kdfIterations;
 
     final decryptedJson = CryptoService.decryptWithSaltV2(
       payload,
       restorePassword,
       salt,
-      iterations: iterations,
     );
 
     final payloadMap = _decodePayloadMap(decryptedJson);
@@ -199,7 +188,6 @@ class BackupService {
       mediaData: mediaData,
       password: restorePassword,
       salt: salt,
-      iterations: iterations,
     );
 
     final currentMeta = await CryptoService.exportCryptoMetadata();
@@ -207,7 +195,6 @@ class BackupService {
     if (currentSalt.isEmpty) {
       throw Exception('Current encryption salt not found.');
     }
-    final currentIterations = await CryptoService.getKdfIterations();
 
     final reEncryptedNotes = <Note>[];
     for (final note in restoredNotes) {
@@ -218,7 +205,6 @@ class BackupService {
                 note.content,
                 restorePassword,
                 salt,
-                iterations: iterations,
               );
 
       final reEncryptedContent =
@@ -248,13 +234,11 @@ class BackupService {
         base64.decode(value),
         restorePassword,
         salt,
-        iterations: iterations,
       );
       reEncryptedMedia[entry.key] = CryptoService.encryptBytesWithSalt(
         decryptedMedia,
         currentPassword,
         currentSalt,
-        iterations: currentIterations,
       );
     }
 
@@ -279,7 +263,9 @@ class BackupService {
   // Parsing / validation helpers
   // ---------------------------------------------------------------------------
 
-  static _BackupWrapper _parseBackupWrapper(Uint8List fileBytes) {
+  static ({String salt, String payload}) _parseBackupWrapper(
+    Uint8List fileBytes,
+  ) {
     final decoded = jsonDecode(utf8.decode(fileBytes));
     if (decoded is! Map) {
       throw const FormatException('Invalid backup format.');
@@ -297,15 +283,7 @@ class BackupService {
       throw const FormatException('Incomplete backup payload.');
     }
 
-    final iterationsRaw = map['kdf_iterations']?.toString();
-    final iterations =
-        int.tryParse(iterationsRaw ?? '') ?? CryptoService.v2Iterations;
-
-    return _BackupWrapper(
-      salt: salt,
-      payload: payload,
-      kdfIterations: iterations,
-    );
+    return (salt: salt, payload: payload);
   }
 
   static Map<String, dynamic> _decodePayloadMap(String decryptedJson) {
@@ -346,17 +324,11 @@ class BackupService {
     required Map<String, dynamic> mediaData,
     required String password,
     required String salt,
-    required int iterations,
   }) async {
     for (final note in notes) {
       if (note.content.isEmpty) continue;
       try {
-        CryptoService.decryptWithSaltV2(
-          note.content,
-          password,
-          salt,
-          iterations: iterations,
-        );
+        CryptoService.decryptWithSaltV2(note.content, password, salt);
       } catch (e) {
         throw FormatException(
           'Backup note ${note.id ?? "(unknown)"} failed authentication/decryption.',
@@ -374,7 +346,6 @@ class BackupService {
           base64.decode(value),
           password,
           salt,
-          iterations: iterations,
         );
       } catch (e) {
         throw FormatException(
@@ -387,16 +358,4 @@ class BackupService {
   static Future<Directory> _fallbackDirectory() async {
     return getApplicationDocumentsDirectory();
   }
-}
-
-class _BackupWrapper {
-  final String salt;
-  final String payload;
-  final int kdfIterations;
-
-  _BackupWrapper({
-    required this.salt,
-    required this.payload,
-    required this.kdfIterations,
-  });
 }

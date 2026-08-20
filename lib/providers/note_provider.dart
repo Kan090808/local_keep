@@ -4,13 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/models/note.dart';
 import 'package:local_keep/services/app_logger.dart';
+import 'package:local_keep/services/hive_database_service.dart';
 import 'package:local_keep/services/media_service.dart';
-import 'package:local_keep/services/note_store.dart';
 
 class NoteProvider with ChangeNotifier {
-  NoteProvider({NoteStore? store}) : _store = store ?? const HiveNoteStore();
-
-  final NoteStore _store;
   List<Note> _notes = [];
   bool _isLoading = false;
   Timer? _debounceTimer;
@@ -23,7 +20,7 @@ class NoteProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      _notes = await _store.fetchNotes();
+      _notes = await HiveDatabaseService.getNotes();
     } catch (e) {
       AppLogger.e('Error fetching notes', e);
     } finally {
@@ -42,7 +39,7 @@ class NoteProvider with ChangeNotifier {
         mediaAttachments: mediaAttachments,
       );
 
-      final id = await _store.insertNote(newNote);
+      final id = await HiveDatabaseService.insertNote(newNote);
       final finalNote = newNote.copyWith(id: id);
       _notes.insert(0, finalNote);
 
@@ -71,7 +68,7 @@ class NoteProvider with ChangeNotifier {
         notifyListeners();
       }
 
-      await _store.updateNote(updatedNote);
+      await HiveDatabaseService.updateNote(updatedNote);
     } catch (e) {
       AppLogger.e('Error updating note', e);
       await fetchNotes();
@@ -98,7 +95,7 @@ class NoteProvider with ChangeNotifier {
 
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _store.updateNote(updatedNote);
+      HiveDatabaseService.updateNote(updatedNote);
     });
   }
 
@@ -111,7 +108,7 @@ class NoteProvider with ChangeNotifier {
       }
     }
 
-    await _store.deleteNote(id);
+    await HiveDatabaseService.deleteNote(id);
     _notes.removeWhere((note) => note.id == id);
     notifyListeners();
   }

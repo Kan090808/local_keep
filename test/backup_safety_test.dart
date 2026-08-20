@@ -3,31 +3,8 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:local_keep/services/crypto_service.dart';
-import 'package:local_keep/services/transactional_replacement.dart';
 
 void main() {
-  test('failed replacement restores the original snapshot', () async {
-    final store = <String>['old note'];
-
-    await expectLater(
-      TransactionalReplacement.replace<String>(
-        current: store,
-        incoming: ['new note'],
-        apply: (values) async {
-          store
-            ..clear()
-            ..addAll(values);
-          if (values.first == 'new note') {
-            throw StateError('simulated write failure');
-          }
-        },
-      ),
-      throwsStateError,
-    );
-
-    expect(store, ['old note']);
-  });
-
   test('tampered backup outer payload fails authentication (v2)', () {
     const password = 'backup-pass';
     final salt = base64Encode(List<int>.generate(32, (i) => 255 - i));

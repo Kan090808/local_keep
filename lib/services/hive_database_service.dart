@@ -5,7 +5,6 @@ import 'package:local_keep/models/note.dart';
 import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/services/app_logger.dart';
 import 'package:local_keep/services/crypto_service.dart';
-import 'package:local_keep/services/transactional_replacement.dart';
 
 class HiveDatabaseService {
   static Box<Note>? _notesBox;
@@ -48,12 +47,7 @@ class HiveDatabaseService {
       return CryptoService.hiveKeyV2(master);
     }
 
-    final iterations = await CryptoService.getKdfIterations();
-    final master = CryptoService.deriveMasterKeyV2(
-      password,
-      salt,
-      iterations: iterations,
-    );
+    final master = CryptoService.deriveMasterKeyV2(password, salt);
     return CryptoService.hiveKeyV2(master);
   }
 
@@ -207,21 +201,24 @@ class HiveDatabaseService {
     }
 
     final current = List<Note>.from(box.values);
-    await TransactionalReplacement.replace<Note>(
-      current: current,
-      incoming: entries.values.toList(),
-      apply: (values) async {
-        final target = {for (final note in values) note.id!: note};
-        if (target.isNotEmpty) {
-          await box.putAll(target);
+    Future<void> apply(List<Note> values) async {
+      final target = {for (final note in values) note.id!: note};
+      if (target.isNotEmpty) {
+        await box.putAll(target);
+      }
+      for (final key in box.keys.toList()) {
+        if (!target.containsKey(key)) {
+          await box.delete(key);
         }
-        for (final key in box.keys.toList()) {
-          if (!target.containsKey(key)) {
-            await box.delete(key);
-          }
-        }
-      },
-    );
+      }
+    }
+
+    try {
+      await apply(entries.values.toList());
+    } catch (_) {
+      await apply(current);
+      rethrow;
+    }
 
     AppLogger.d('Replaced notes count=${entries.length}');
   }
@@ -249,8 +246,6 @@ class HiveDatabaseService {
     if (salt == null) {
       throw StateError('Salt missing during password change.');
     }
-    final iterations = await CryptoService.getKdfIterations();
-
     final reEncryptedNotes = <Note>[];
     for (final note in notes) {
       if (note.id == null) continue;
@@ -280,11 +275,7 @@ class HiveDatabaseService {
     final plainNotesForMove = List<Note>.from(reEncryptedNotes);
     await _closeBoxOnly();
 
-    final master = CryptoService.deriveMasterKeyV2(
-      newPassword,
-      salt,
-      iterations: iterations,
-    );
+    final master = CryptoService.deriveMasterKeyV2(newPassword, salt);
     final newHiveKey = CryptoService.hiveKeyV2(master);
 
     // Replace the current box with one encrypted by the new password.
