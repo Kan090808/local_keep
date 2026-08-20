@@ -1,25 +1,27 @@
-import 'dart:convert';
 import 'dart:typed_data';
+
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:crypto/crypto.dart';
 import 'package:local_keep/models/note.dart';
 import 'package:local_keep/models/media_attachment.dart';
+import 'package:local_keep/services/app_logger.dart';
 import 'package:local_keep/services/crypto_service.dart';
+import 'package:local_keep/services/transactional_replacement.dart';
 
 class HiveDatabaseService {
   static Box<Note>? _notesBox;
   static String? _currentPassword;
-  static const String _boxName = 'notes_v2'; // Changed box name for fresh start
+
+  /// Current encrypted box (Hive key = PBKDF2-derived v2 subkey).
+  static const String notesBoxName = 'notes_v3';
+
   static bool _isInitialized = false;
 
-  /// Initialize Hive and register adapters
   static Future<void> initialize() async {
     if (_isInitialized) return;
 
     try {
       await Hive.initFlutter();
 
-      // Only register adapters if not already registered
       if (!Hive.isAdapterRegistered(0)) {
         Hive.registerAdapter(NoteAdapter());
       }
@@ -28,130 +30,91 @@ class HiveDatabaseService {
       }
 
       _isInitialized = true;
-      print('✓ Hive initialized successfully');
+      AppLogger.d('Hive initialized');
     } catch (e) {
-      print('✗ Error initializing Hive: $e');
+      AppLogger.e('Hive init failed', e);
       rethrow;
     }
   }
 
-  /// Set password for encryption
-  static void setPassword(String password) {
+  static String? getPassword() => _currentPassword;
+
+  static Future<Uint8List> _hiveKeyForPassword(String password) async {
+    final salt = await CryptoService.readSalt();
+    if (salt == null) {
+      // Brand-new install path: salt created during setupPassword.
+      final created = await CryptoService.getOrCreateSalt();
+      final master = CryptoService.deriveMasterKeyV2(password, created);
+      return CryptoService.hiveKeyV2(master);
+    }
+
+    final iterations = await CryptoService.getKdfIterations();
+    final master = CryptoService.deriveMasterKeyV2(
+      password,
+      salt,
+      iterations: iterations,
+    );
+    return CryptoService.hiveKeyV2(master);
+  }
+
+  /// Open the current encrypted box for [password].
+  static Future<void> ensureOpen(String password) async {
     _currentPassword = password;
-    print('✓ Password set for database');
+
+    if (_notesBox != null && _notesBox!.isOpen) {
+      return;
+    }
+
+    await initialize();
+
+    final boxName = notesBoxName;
+    final key = await _hiveKeyForPassword(password);
+    _notesBox = await Hive.openBox<Note>(
+      boxName,
+      encryptionCipher: HiveAesCipher(key),
+    );
+    AppLogger.d('Opened notes box $boxName');
   }
 
-  /// Get current password
-  static String? getPassword() {
-    return _currentPassword;
-  }
-
-  /// Derive encryption key from password
-  static Uint8List _deriveEncryptionKey(String password) {
-    final bytes = utf8.encode(password);
-    final digest = sha256.convert(bytes);
-    return Uint8List.fromList(digest.bytes);
-  }
-
-  /// Get or open the notes box
   static Future<Box<Note>> _getNotesBox() async {
-    // Return existing box if already open
     if (_notesBox != null && _notesBox!.isOpen) {
       return _notesBox!;
     }
-
-    // Check password is set
     if (_currentPassword == null) {
-      throw Exception('Password not set. Call setPassword() first.');
+      throw Exception('Password not set. Call ensureOpen first.');
     }
-
-    try {
-      // Generate encryption key
-      final encryptionKey = _deriveEncryptionKey(_currentPassword!);
-
-      // Open encrypted box
-      _notesBox = await Hive.openBox<Note>(
-        _boxName,
-        encryptionCipher: HiveAesCipher(encryptionKey),
-      );
-
-      print('✓ Notes box opened (${_notesBox!.length} notes)');
-      return _notesBox!;
-    } catch (e) {
-      print('✗ Error opening notes box: $e');
-
-      // Handle corrupted database
-      if (e.toString().contains('type') || e.toString().contains('adapt')) {
-        print('⚠ Detected corrupted database, resetting...');
-        await _resetDatabase();
-
-        // Try again with fresh database
-        final encryptionKey = _deriveEncryptionKey(_currentPassword!);
-        _notesBox = await Hive.openBox<Note>(
-          _boxName,
-          encryptionCipher: HiveAesCipher(encryptionKey),
-        );
-        print('✓ Fresh database created');
-        return _notesBox!;
-      }
-
-      rethrow;
-    }
+    await ensureOpen(_currentPassword!);
+    return _notesBox!;
   }
 
-  /// Reset database (delete and recreate)
-  static Future<void> _resetDatabase() async {
-    try {
-      if (_notesBox?.isOpen == true) {
-        await _notesBox!.close();
-        _notesBox = null;
-      }
-      await Hive.deleteBoxFromDisk(_boxName);
-      print('✓ Database reset complete');
-    } catch (e) {
-      print('✗ Error resetting database: $e');
-    }
-  }
-
-  /// Insert a new note
   static Future<String> insertNote(Note note) async {
     try {
-      // Get box
       final box = await _getNotesBox();
-
-      // Generate unique ID
       final id = DateTime.now().millisecondsSinceEpoch.toString();
 
-      // Encrypt content
       final encryptedContent = await CryptoService.encrypt(
         note.content,
         _currentPassword!,
       );
 
-      // Create note with encrypted content and media attachments
       final noteToStore = Note(
         id: id,
         content: encryptedContent,
         createdAt: note.createdAt,
         updatedAt: note.updatedAt,
         orderIndex: note.orderIndex,
-        mediaAttachments: note.mediaAttachments, // Include media attachments
+        mediaAttachments: note.mediaAttachments,
       );
 
-      // Store in box
       await box.put(id, noteToStore);
-
-      print(
-        '✓ Note saved (ID: $id, length: ${note.content.length}, media: ${note.mediaAttachments.length})',
-      );
+      AppLogger.d('Note saved id=$id');
       return id;
     } catch (e) {
-      print('✗ Error saving note: $e');
+      AppLogger.e('Error saving note', e);
       rethrow;
     }
   }
 
-  /// Get all notes
   static Future<List<Note>> getNotes() async {
     try {
       final box = await _getNotesBox();
@@ -159,7 +122,6 @@ class HiveDatabaseService {
 
       for (final note in box.values) {
         try {
-          // Decrypt content
           final decryptedContent = await CryptoService.decrypt(
             note.content,
             _currentPassword!,
@@ -172,34 +134,29 @@ class HiveDatabaseService {
               createdAt: note.createdAt,
               updatedAt: note.updatedAt,
               orderIndex: note.orderIndex,
-              mediaAttachments:
-                  note.mediaAttachments, // Include media attachments
+              mediaAttachments: note.mediaAttachments,
             ),
           );
         } catch (e) {
-          print('⚠ Skipping corrupted note ${note.id}: $e');
+          AppLogger.e('Skipping corrupted note ${note.id}', e);
           continue;
         }
       }
 
-      // Sort by date (newest first)
       notes.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-      print('✓ Loaded ${notes.length} notes');
+      AppLogger.d('Loaded ${notes.length} notes');
       return notes;
     } catch (e) {
-      print('✗ Error loading notes: $e');
+      AppLogger.e('Error loading notes', e);
       rethrow;
     }
   }
 
-  /// Return raw encrypted notes as stored in Hive (used for backups)
   static Future<List<Note>> getNotesRaw() async {
     final box = await _getNotesBox();
     return List<Note>.from(box.values);
   }
 
-  /// Update an existing note
   static Future<void> updateNote(Note note) async {
     if (note.id == null) {
       throw Exception('Cannot update note without ID');
@@ -207,8 +164,6 @@ class HiveDatabaseService {
 
     try {
       final box = await _getNotesBox();
-
-      // Encrypt updated content
       final encryptedContent = await CryptoService.encrypt(
         note.content,
         _currentPassword!,
@@ -220,36 +175,30 @@ class HiveDatabaseService {
         createdAt: note.createdAt,
         updatedAt: note.updatedAt,
         orderIndex: note.orderIndex,
-        mediaAttachments: note.mediaAttachments, // Include media attachments
+        mediaAttachments: note.mediaAttachments,
       );
 
       await box.put(note.id!, updatedNote);
-      print(
-        '✓ Note updated (ID: ${note.id}, media: ${note.mediaAttachments.length})',
-      );
+      AppLogger.d('Note updated id=${note.id}');
     } catch (e) {
-      print('✗ Error updating note: $e');
+      AppLogger.e('Error updating note', e);
       rethrow;
     }
   }
 
-  /// Delete a note
   static Future<void> deleteNote(String id) async {
     try {
       final box = await _getNotesBox();
       await box.delete(id);
-      print('✓ Note deleted (ID: $id)');
+      AppLogger.d('Note deleted id=$id');
     } catch (e) {
-      print('✗ Error deleting note: $e');
+      AppLogger.e('Error deleting note', e);
       rethrow;
     }
   }
 
-  /// Replace all notes in the encrypted box with the provided collection
   static Future<void> replaceAllNotesRaw(List<Note> notes) async {
     final box = await _getNotesBox();
-    await box.clear();
-
     final Map<String, Note> entries = {};
     for (final note in notes) {
       if (note.id != null) {
@@ -257,97 +206,134 @@ class HiveDatabaseService {
       }
     }
 
-    if (entries.isNotEmpty) {
-      await box.putAll(entries);
-    }
+    final current = List<Note>.from(box.values);
+    await TransactionalReplacement.replace<Note>(
+      current: current,
+      incoming: entries.values.toList(),
+      apply: (values) async {
+        final target = {for (final note in values) note.id!: note};
+        if (target.isNotEmpty) {
+          await box.putAll(target);
+        }
+        for (final key in box.keys.toList()) {
+          if (!target.containsKey(key)) {
+            await box.delete(key);
+          }
+        }
+      },
+    );
 
-    print('✓ Restored ${entries.length} notes into Hive');
+    AppLogger.d('Replaced notes count=${entries.length}');
   }
 
-  /// Clear all notes
   static Future<void> clearNotes() async {
     try {
       final box = await _getNotesBox();
       await box.clear();
-      print('✓ All notes cleared');
+      AppLogger.d('All notes cleared');
     } catch (e) {
-      print('✗ Error clearing notes: $e');
+      AppLogger.e('Error clearing notes', e);
       rethrow;
     }
   }
 
-  /// Re-encrypt all notes with new password
-  static Future<void> reEncryptNotes(
+  /// Re-encrypt all notes + media and re-key Hive for a password change.
+  static Future<void> reEncryptAll(
     String oldPassword,
     String newPassword,
   ) async {
-    try {
-      final box = await _getNotesBox();
-      int count = 0;
+    await ensureOpen(oldPassword);
 
-      for (final note in box.values) {
-        if (note.id != null) {
-          // Decrypt with old password
-          final decryptedContent = await CryptoService.decrypt(
-            note.content,
-            oldPassword,
-          );
-
-          // Re-encrypt with new password
-          final reEncryptedContent = await CryptoService.encrypt(
-            decryptedContent,
-            newPassword,
-          );
-
-          final updatedNote = Note(
-            id: note.id,
-            content: reEncryptedContent,
-            createdAt: note.createdAt,
-            updatedAt: note.updatedAt,
-            orderIndex: note.orderIndex,
-            mediaAttachments:
-                note.mediaAttachments, // Include media attachments
-          );
-
-          await box.put(note.id!, updatedNote);
-          count++;
-        }
-      }
-
-      setPassword(newPassword);
-      print('✓ Re-encrypted $count notes');
-    } catch (e) {
-      print('✗ Error re-encrypting notes: $e');
-      rethrow;
+    final notes = await getNotesRaw();
+    final salt = await CryptoService.readSalt();
+    if (salt == null) {
+      throw StateError('Salt missing during password change.');
     }
+    final iterations = await CryptoService.getKdfIterations();
+
+    final reEncryptedNotes = <Note>[];
+    for (final note in notes) {
+      if (note.id == null) continue;
+      final plain =
+          note.content.isEmpty
+              ? ''
+              : await CryptoService.decrypt(note.content, oldPassword);
+      final cipher =
+          plain.isEmpty ? '' : await CryptoService.encrypt(plain, newPassword);
+      reEncryptedNotes.add(
+        Note(
+          id: note.id,
+          content: cipher,
+          createdAt: note.createdAt,
+          updatedAt: note.updatedAt,
+          orderIndex: note.orderIndex,
+          mediaAttachments: note.mediaAttachments,
+        ),
+      );
+    }
+
+    // Media re-encrypt via MediaService seam (imported lazily by caller path).
+    // Implemented here through dynamic import avoidance: caller also updates media.
+    await replaceAllNotesRaw(reEncryptedNotes);
+
+    // Close and reopen under new hive key in v2 box.
+    final plainNotesForMove = List<Note>.from(reEncryptedNotes);
+    await _closeBoxOnly();
+
+    final master = CryptoService.deriveMasterKeyV2(
+      newPassword,
+      salt,
+      iterations: iterations,
+    );
+    final newHiveKey = CryptoService.hiveKeyV2(master);
+
+    // Replace the current box with one encrypted by the new password.
+    if (await Hive.boxExists(notesBoxName)) {
+      await Hive.deleteBoxFromDisk(notesBoxName);
+    }
+
+    _notesBox = await Hive.openBox<Note>(
+      notesBoxName,
+      encryptionCipher: HiveAesCipher(newHiveKey),
+    );
+    _currentPassword = newPassword;
+
+    if (plainNotesForMove.isNotEmpty) {
+      final map = {
+        for (final n in plainNotesForMove)
+          if (n.id != null) n.id!: n,
+      };
+      await _notesBox!.putAll(map);
+    }
+
+    AppLogger.d(
+      'Re-encrypted ${reEncryptedNotes.length} notes for new password',
+    );
   }
 
-  /// Close the database
-  static Future<void> close() async {
+  static Future<void> _closeBoxOnly() async {
     if (_notesBox?.isOpen == true) {
       await _notesBox!.close();
-      _notesBox = null;
     }
-    _currentPassword = null;
-    print('✓ Database closed');
+    _notesBox = null;
   }
 
-  /// Force reset database (manual cleanup)
+  static Future<void> close() async {
+    await _closeBoxOnly();
+    _currentPassword = null;
+    AppLogger.d('Database closed');
+  }
+
   static Future<void> resetDatabase() async {
     try {
-      print('⚠ Resetting database...');
-
-      // Close box if open
-      if (_notesBox?.isOpen == true) {
-        await _notesBox!.close();
-        _notesBox = null;
+      AppLogger.d('Resetting database');
+      await _closeBoxOnly();
+      if (await Hive.boxExists(notesBoxName)) {
+        await Hive.deleteBoxFromDisk(notesBoxName);
       }
-
-      // Delete the box from disk
-      await Hive.deleteBoxFromDisk(_boxName);
-      print('✓ Database reset complete');
+      AppLogger.d('Database reset complete');
     } catch (e) {
-      print('✗ Error resetting database: $e');
+      AppLogger.e('Error resetting database', e);
       rethrow;
     }
   }

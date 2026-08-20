@@ -1,183 +1,353 @@
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+/// The app's single encryption format.
+///
+/// Format: `LK2\x01 || IV(16) || ciphertext || HMAC-SHA256(32)`.
 class CryptoService {
   static const _secureStorage = FlutterSecureStorage();
+
   static const _saltKey = 'encryption_salt';
   static const _passwordHashKey = 'password_hash';
-  static const _iterations = 10000;
-  static const _keyLength = 32;
+  static const _kdfIterationsKey = 'kdf_iterations';
 
-  // Generate random bytes
-  static Uint8List _generateRandomBytes(int length) {
+  static const v2Iterations = 210000;
+  static const v2KeyLength = 32;
+  static final v2Magic = Uint8List.fromList([0x4C, 0x4B, 0x32, 0x01]);
+
+  static const _labelContent = 'localkeep-v2-content';
+  static const _labelMac = 'localkeep-v2-mac';
+  static const _labelHive = 'localkeep-v2-hive';
+  static const _labelVerify = 'localkeep-v2-verify';
+
+  static Uint8List generateRandomBytes(int length) {
     final random = Random.secure();
     return Uint8List.fromList(
       List<int>.generate(length, (_) => random.nextInt(256)),
     );
   }
 
-  // Generate key from password using PBKDF2
-  static Uint8List _deriveKeyFromPassword(String password, Uint8List salt) {
-    List<int> passwordBytes = utf8.encode(password);
-    var hmac = Hmac(sha256, passwordBytes);
-    var key = List<int>.filled(_keyLength, 0);
-    var result = List<int>.from(salt);
+  static bool constantTimeEquals(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a[i] ^ b[i];
+    }
+    return diff == 0;
+  }
 
-    for (var i = 0; i < _iterations; i++) {
-      var hmacInput = List<int>.from(result);
-      var mac = hmac.convert(hmacInput);
-      result = mac.bytes;
+  static bool constantTimeStringEquals(String a, String b) {
+    return constantTimeEquals(utf8.encode(a), utf8.encode(b));
+  }
 
-      for (var j = 0; j < _keyLength; j++) {
-        key[j] ^= result[j % result.length];
+  static Uint8List pbkdf2HmacSha256({
+    required List<int> password,
+    required List<int> salt,
+    required int iterations,
+    required int dkLen,
+  }) {
+    final hmac = Hmac(sha256, password);
+    const hLen = 32;
+    final blockCount = (dkLen + hLen - 1) ~/ hLen;
+    final derived = <int>[];
+
+    for (var block = 1; block <= blockCount; block++) {
+      final blockIndex = ByteData(4)..setUint32(0, block, Endian.big);
+      var u = hmac.convert([...salt, ...blockIndex.buffer.asUint8List()]).bytes;
+      final t = List<int>.from(u);
+      for (var i = 1; i < iterations; i++) {
+        u = hmac.convert(u).bytes;
+        for (var j = 0; j < t.length; j++) {
+          t[j] ^= u[j];
+        }
       }
+      derived.addAll(t);
     }
-
-    return Uint8List.fromList(key);
+    return Uint8List.fromList(derived.sublist(0, dkLen));
   }
 
-  // Get or create salt
-  static Future<Uint8List> _getOrCreateSalt() async {
-    final storedSalt = await _secureStorage.read(key: _saltKey);
-    if (storedSalt != null) {
-      return base64.decode(storedSalt);
-    } else {
-      final salt = _generateRandomBytes(32);
-      await _secureStorage.write(key: _saltKey, value: base64.encode(salt));
-      return salt;
-    }
-  }
-
-  // Setup password
-  static Future<void> setupPassword(String password) async {
-    final salt = await _getOrCreateSalt();
-    final key = _deriveKeyFromPassword(password, salt);
-    await _secureStorage.write(
-      key: _passwordHashKey,
-      value: base64.encode(key),
+  static Uint8List deriveMasterKeyV2(
+    String password,
+    Uint8List salt, {
+    int iterations = v2Iterations,
+  }) {
+    return pbkdf2HmacSha256(
+      password: utf8.encode(password),
+      salt: salt,
+      iterations: iterations,
+      dkLen: v2KeyLength,
     );
   }
 
-  // Verify password
-  static Future<bool> verifyPassword(String password) async {
-    final storedHash = await _secureStorage.read(key: _passwordHashKey);
-    if (storedHash == null) return false;
-
-    final salt = await _getOrCreateSalt();
-    final calculatedKey = _deriveKeyFromPassword(password, salt);
-
-    return base64.encode(calculatedKey) == storedHash;
+  static Uint8List _deriveSubkey(Uint8List master, String label) {
+    return Uint8List.fromList(
+      Hmac(sha256, master).convert(utf8.encode(label)).bytes,
+    );
   }
 
-  // Check if password is setup
+  static Uint8List contentKeyV2(Uint8List master) =>
+      _deriveSubkey(master, _labelContent);
+  static Uint8List macKeyV2(Uint8List master) =>
+      _deriveSubkey(master, _labelMac);
+  static Uint8List hiveKeyV2(Uint8List master) =>
+      _deriveSubkey(master, _labelHive);
+  static Uint8List verifierV2(Uint8List master) =>
+      _deriveSubkey(master, _labelVerify);
+
+  static bool isV2CipherBytes(Uint8List bytes) {
+    if (bytes.length < v2Magic.length + 16 + 16 + 32) return false;
+    for (var i = 0; i < v2Magic.length; i++) {
+      if (bytes[i] != v2Magic[i]) return false;
+    }
+    return true;
+  }
+
+  static bool isV2CipherText(String encoded) {
+    try {
+      return isV2CipherBytes(base64.decode(encoded));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<Uint8List> getOrCreateSalt() async {
+    final storedSalt = await _secureStorage.read(key: _saltKey);
+    if (storedSalt != null && storedSalt.isNotEmpty) {
+      return base64.decode(storedSalt);
+    }
+    final salt = generateRandomBytes(32);
+    await _secureStorage.write(key: _saltKey, value: base64.encode(salt));
+    return salt;
+  }
+
+  static Future<Uint8List?> readSalt() async {
+    final storedSalt = await _secureStorage.read(key: _saltKey);
+    if (storedSalt == null || storedSalt.isEmpty) return null;
+    return base64.decode(storedSalt);
+  }
+
+  static Future<int> getKdfIterations() async {
+    final raw = await _secureStorage.read(key: _kdfIterationsKey);
+    if (raw == null || raw.isEmpty) return v2Iterations;
+    return int.tryParse(raw) ?? v2Iterations;
+  }
+
+  static Future<void> setKdfIterations(int iterations) async {
+    await _secureStorage.write(
+      key: _kdfIterationsKey,
+      value: iterations.toString(),
+    );
+  }
+
+  static Future<void> setupPassword(String password) async {
+    final salt = await getOrCreateSalt();
+    final iterations = await getKdfIterations();
+    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    await _secureStorage.write(
+      key: _passwordHashKey,
+      value: base64.encode(verifierV2(master)),
+    );
+    await setKdfIterations(iterations);
+  }
+
+  static Future<bool> verifyPassword(String password) async {
+    final storedHash = await _secureStorage.read(key: _passwordHashKey);
+    final salt = await readSalt();
+    if (storedHash == null || salt == null) return false;
+
+    final master = deriveMasterKeyV2(
+      password,
+      salt,
+      iterations: await getKdfIterations(),
+    );
+    return constantTimeStringEquals(
+      base64.encode(verifierV2(master)),
+      storedHash,
+    );
+  }
+
   static Future<bool> isPasswordSetup() async {
     return await _secureStorage.read(key: _passwordHashKey) != null;
   }
 
-  // Export crypto metadata (salt) for backup (password hash is not exported)
   static Future<Map<String, String>> exportCryptoMetadata() async {
-    final salt = await _secureStorage.read(key: _saltKey);
-    return {'salt': salt ?? ''};
+    return {
+      'salt': (await _secureStorage.read(key: _saltKey)) ?? '',
+      'kdf_iterations': (await getKdfIterations()).toString(),
+    };
   }
 
-  // Import crypto metadata (salt). Caller must ensure this is safe to do.
-  static Future<void> importCryptoMetadata({required String saltBase64}) async {
+  static Future<void> importCryptoMetadata({
+    required String saltBase64,
+    int? kdfIterations,
+  }) async {
     await _secureStorage.write(key: _saltKey, value: saltBase64);
+    if (kdfIterations != null) {
+      await setKdfIterations(kdfIterations);
+    }
   }
 
-  // Clear all sensitive keys (password hash and salt)
   static Future<void> clearAll() async {
     await _secureStorage.delete(key: _passwordHashKey);
     await _secureStorage.delete(key: _saltKey);
+    await _secureStorage.delete(key: _kdfIterationsKey);
   }
 
-  // Encrypt data
   static Future<String> encrypt(String data, String password) async {
     if (data.isEmpty) return '';
-
-    final salt = await _getOrCreateSalt();
-    final iv = _generateRandomBytes(16);
-    final key = _deriveKeyFromPassword(password, salt);
-
-    final encrypter = Encrypter(AES(Key(key)));
-    final encrypted = encrypter.encrypt(data, iv: IV(iv));
-
-    final combined = iv + encrypted.bytes;
-    return base64.encode(combined);
+    final salt = await getOrCreateSalt();
+    return encryptWithSaltV2(
+      data,
+      password,
+      base64.encode(salt),
+      iterations: await getKdfIterations(),
+    );
   }
 
-  // Decrypt data
   static Future<String> decrypt(String encryptedData, String password) async {
     if (encryptedData.isEmpty) return '';
-
-    final salt = await _getOrCreateSalt();
-    final key = _deriveKeyFromPassword(password, salt);
-
-    final combined = base64.decode(encryptedData);
-    final iv = combined.sublist(0, 16);
-    final encryptedBytes = combined.sublist(16);
-
-    final encrypter = Encrypter(AES(Key(key)));
-    final encrypted = Encrypted(encryptedBytes);
-    return encrypter.decrypt(encrypted, iv: IV(iv));
+    final salt = await readSalt();
+    if (salt == null) throw StateError('Encryption salt missing.');
+    return decryptWithSaltV2(
+      encryptedData,
+      password,
+      base64.encode(salt),
+      iterations: await getKdfIterations(),
+    );
   }
 
-  // Decrypt using an explicit salt (base64) — for portable backups
-  static Future<String> decryptWithSalt(
+  static String encryptWithSaltV2(
+    String data,
+    String password,
+    String saltBase64, {
+    int iterations = v2Iterations,
+  }) {
+    if (data.isEmpty) return '';
+    final salt = base64.decode(saltBase64);
+    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    return base64.encode(
+      encryptBytesV2(
+        Uint8List.fromList(utf8.encode(data)),
+        contentKeyV2(master),
+        macKeyV2(master),
+      ),
+    );
+  }
+
+  static String decryptWithSaltV2(
     String encryptedData,
     String password,
-    String saltBase64,
-  ) async {
+    String saltBase64, {
+    int iterations = v2Iterations,
+  }) {
     if (encryptedData.isEmpty) return '';
-
     final salt = base64.decode(saltBase64);
-    final key = _deriveKeyFromPassword(password, salt);
-
-    final combined = base64.decode(encryptedData);
-    final iv = combined.sublist(0, 16);
-    final encryptedBytes = combined.sublist(16);
-
-    final encrypter = Encrypter(AES(Key(key)));
-    final encrypted = Encrypted(encryptedBytes);
-    return encrypter.decrypt(encrypted, iv: IV(iv));
+    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    return utf8.decode(
+      decryptBytesV2(
+        base64.decode(encryptedData),
+        contentKeyV2(master),
+        macKeyV2(master),
+      ),
+    );
   }
 
-  // Encrypt bytes (for media files)
   static Future<String> encryptBytes(Uint8List data, String password) async {
     if (data.isEmpty) return '';
-
-    final salt = await _getOrCreateSalt();
-    final iv = _generateRandomBytes(16);
-    final key = _deriveKeyFromPassword(password, salt);
-
-    final encrypter = Encrypter(AES(Key(key)));
-    final encrypted = encrypter.encryptBytes(data, iv: IV(iv));
-
-    final combined = iv + encrypted.bytes;
-    return base64.encode(combined);
+    final salt = await getOrCreateSalt();
+    return base64.encode(
+      encryptBytesWithSalt(
+        data,
+        password,
+        base64.encode(salt),
+        iterations: await getKdfIterations(),
+      ),
+    );
   }
 
-  // Decrypt bytes (for media files)
+  static Uint8List encryptBytesWithSalt(
+    Uint8List data,
+    String password,
+    String saltBase64, {
+    int iterations = v2Iterations,
+  }) {
+    if (data.isEmpty) return Uint8List(0);
+    final salt = base64.decode(saltBase64);
+    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    return encryptBytesV2(data, contentKeyV2(master), macKeyV2(master));
+  }
+
   static Future<Uint8List> decryptBytes(
     String encryptedData,
     String password,
   ) async {
     if (encryptedData.isEmpty) return Uint8List(0);
+    final salt = await readSalt();
+    if (salt == null) throw StateError('Encryption salt missing.');
+    return decryptBytesWithSalt(
+      base64.decode(encryptedData),
+      password,
+      base64.encode(salt),
+      iterations: await getKdfIterations(),
+    );
+  }
 
-    final salt = await _getOrCreateSalt();
-    final key = _deriveKeyFromPassword(password, salt);
+  static Uint8List decryptBytesWithSalt(
+    Uint8List encryptedBytes,
+    String password,
+    String saltBase64, {
+    int iterations = v2Iterations,
+  }) {
+    if (encryptedBytes.isEmpty) return Uint8List(0);
+    final salt = base64.decode(saltBase64);
+    final master = deriveMasterKeyV2(password, salt, iterations: iterations);
+    return decryptBytesV2(
+      encryptedBytes,
+      contentKeyV2(master),
+      macKeyV2(master),
+    );
+  }
 
-    final combined = base64.decode(encryptedData);
-    final iv = combined.sublist(0, 16);
-    final encryptedBytes = combined.sublist(16);
+  static Uint8List encryptBytesV2(
+    Uint8List data,
+    Uint8List contentKey,
+    Uint8List macKey,
+  ) {
+    final iv = generateRandomBytes(16);
+    final encrypted = Encrypter(
+      AES(Key(contentKey)),
+    ).encryptBytes(data, iv: IV(iv));
+    final body = Uint8List.fromList([...v2Magic, ...iv, ...encrypted.bytes]);
+    final mac = Hmac(sha256, macKey).convert(body).bytes;
+    return Uint8List.fromList([...body, ...mac]);
+  }
 
-    final encrypter = Encrypter(AES(Key(key)));
-    final encrypted = Encrypted(encryptedBytes);
-    final decryptedList = encrypter.decryptBytes(encrypted, iv: IV(iv));
-    return Uint8List.fromList(decryptedList);
+  static Uint8List decryptBytesV2(
+    Uint8List sealed,
+    Uint8List contentKey,
+    Uint8List macKey,
+  ) {
+    if (!isV2CipherBytes(sealed)) {
+      throw const FormatException('Invalid v2 ciphertext.');
+    }
+    final macStart = sealed.length - 32;
+    final body = sealed.sublist(0, macStart);
+    final mac = sealed.sublist(macStart);
+    final expected = Hmac(sha256, macKey).convert(body).bytes;
+    if (!constantTimeEquals(mac, expected)) {
+      throw const FormatException('Ciphertext authentication failed.');
+    }
+    final iv = body.sublist(v2Magic.length, v2Magic.length + 16);
+    final ciphertext = body.sublist(v2Magic.length + 16);
+    return Uint8List.fromList(
+      Encrypter(
+        AES(Key(contentKey)),
+      ).decryptBytes(Encrypted(ciphertext), iv: IV(iv)),
+    );
   }
 }

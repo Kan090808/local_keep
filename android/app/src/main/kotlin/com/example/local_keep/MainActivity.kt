@@ -1,7 +1,8 @@
 package com.example.local_keep
 
 import android.content.Intent
-import android.net.Uri
+import android.os.Bundle
+import android.view.WindowManager
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -11,9 +12,18 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.local_keep/file_preview"
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Prevent screenshots and recents thumbnails of sensitive content.
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             if (call.method == "previewFile") {
                 val filePath = call.argument<String>("filePath")
@@ -39,6 +49,13 @@ class MainActivity : FlutterActivity() {
             throw Exception("File does not exist: $filePath")
         }
 
+        // Only allow files under the secure_preview cache subdirectory.
+        val canonical = file.canonicalPath
+        val previewRoot = File(cacheDir, "secure_preview").canonicalPath
+        if (!canonical.startsWith(previewRoot)) {
+            throw SecurityException("Preview path outside secure_preview directory")
+        }
+
         val uri = FileProvider.getUriForFile(
             this,
             "${applicationContext.packageName}.fileprovider",
@@ -56,7 +73,6 @@ class MainActivity : FlutterActivity() {
         try {
             startActivity(intent)
         } catch (e: Exception) {
-            // If no app can handle this file type, show chooser
             val chooserIntent = Intent.createChooser(intent, "Open with")
             startActivity(chooserIntent)
         }

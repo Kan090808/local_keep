@@ -57,10 +57,9 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
         });
       }
     } catch (e) {
-      print('Error changing password: $e');
       if (context.mounted) {
         setState(() {
-          _errorMessage = 'An error occurred: ${e.toString()}';
+          _errorMessage = 'An error occurred while changing password.';
         });
       }
     } finally {

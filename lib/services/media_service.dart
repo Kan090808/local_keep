@@ -1,74 +1,78 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:mime/mime.dart';
-import 'package:local_keep/models/media_attachment.dart';
-import 'package:local_keep/services/crypto_service.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
+
+import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/services/app_lifecycle_service.dart';
+import 'package:local_keep/services/app_logger.dart';
+import 'package:local_keep/services/crypto_service.dart';
+import 'package:local_keep/services/encrypted_media_store.dart';
 import 'package:local_keep/services/file_preview_service.dart';
 
 class MediaService {
   static final _uuid = const Uuid();
-  static const String _mediaFolderName = 'encrypted_media';
+  static final _mediaStore = EncryptedMediaStore();
+  static const _previewSubdir = 'secure_preview';
 
-  /// Get the media storage directory
   static Future<Directory> _getMediaDirectory() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    final mediaDir = Directory('${appDir.path}/$_mediaFolderName');
-    if (!await mediaDir.exists()) {
-      await mediaDir.create(recursive: true);
-    }
-    return mediaDir;
+    return _mediaStore.directory();
   }
 
-  /// Read an encrypted media or thumbnail file by its identifier
   static Future<Uint8List?> readEncryptedMediaFile(String fileId) async {
-    final mediaDir = await _getMediaDirectory();
-    final targetFile = File('${mediaDir.path}/$fileId.enc');
-
-    if (!await targetFile.exists()) {
-      return null;
-    }
-
-    return await targetFile.readAsBytes();
+    return _mediaStore.read(fileId);
   }
 
-  /// Persist an encrypted media or thumbnail file to storage
   static Future<void> writeEncryptedMediaFile(
     String fileId,
     Uint8List data,
   ) async {
-    final mediaDir = await _getMediaDirectory();
-    final targetFile = File('${mediaDir.path}/$fileId.enc');
-    await targetFile.writeAsBytes(data, flush: true);
+    await _mediaStore.write(fileId, data);
   }
 
-  /// Remove every stored encrypted media file (used before imports)
   static Future<void> clearAllMedia() async {
-    final mediaDir = await _getMediaDirectory();
-    if (!await mediaDir.exists()) {
-      return;
-    }
+    await _mediaStore.clear();
+  }
 
-    final entries = mediaDir.list(recursive: false, followLinks: false);
-    await for (final entity in entries) {
-      if (entity is File) {
-        try {
+  static Future<Map<String, Uint8List>> snapshotEncryptedMedia() {
+    return _mediaStore.snapshot();
+  }
+
+  static Future<void> replaceAllEncryptedMedia(Map<String, Uint8List> files) {
+    return _mediaStore.replaceAll(files);
+  }
+
+  static Future<Directory> _previewDirectory() async {
+    final tempDir = await getTemporaryDirectory();
+    final dir = Directory('${tempDir.path}/$_previewSubdir');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    return dir;
+  }
+
+  /// Remove any decrypted preview files from the secure preview cache.
+  static Future<void> cleanupPreviewTempFiles() async {
+    try {
+      final dir = await _previewDirectory();
+      if (!await dir.exists()) return;
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is File) {
           await entity.delete();
-        } catch (e) {
-          print('✗ Error deleting media file during clear: $e');
         }
       }
+    } catch (e) {
+      AppLogger.e('Failed to cleanup preview temps', e);
     }
   }
 
-  /// Pick images from gallery
   static Future<List<MediaAttachment>?> pickImages(String password) async {
     final lifecycleService = AppLifecycleService();
     try {
@@ -96,14 +100,13 @@ class MediaService {
 
       return attachments;
     } catch (e) {
-      print('Error picking images: $e');
+      AppLogger.e('Error picking images', e);
       return null;
     } finally {
       lifecycleService.endFilePicking();
     }
   }
 
-  /// Pick a video from gallery
   static Future<MediaAttachment?> pickVideo(String password) async {
     final lifecycleService = AppLifecycleService();
     try {
@@ -117,14 +120,13 @@ class MediaService {
       final file = File(video.path);
       return await _createMediaAttachment(file, MediaType.video, password);
     } catch (e) {
-      print('Error picking video: $e');
+      AppLogger.e('Error picking video', e);
       return null;
     } finally {
       lifecycleService.endFilePicking();
     }
   }
 
-  /// Pick files
   static Future<List<MediaAttachment>?> pickFiles(String password) async {
     final lifecycleService = AppLifecycleService();
     try {
@@ -152,14 +154,13 @@ class MediaService {
 
       return attachments;
     } catch (e) {
-      print('Error picking files: $e');
+      AppLogger.e('Error picking files', e);
       return null;
     } finally {
       lifecycleService.endFilePicking();
     }
   }
 
-  /// Create a media attachment from a file
   static Future<MediaAttachment> _createMediaAttachment(
     File file,
     MediaType mediaType,
@@ -169,23 +170,13 @@ class MediaService {
     final fileName = path.basename(file.path);
     final mimeType = lookupMimeType(file.path);
 
-    // Generate unique ID for this media
     final id = _uuid.v4();
-    final mediaDir = await _getMediaDirectory();
-
-    // Encrypt the file data
     final encryptedBytes = await CryptoService.encryptBytes(bytes, password);
 
-    // Save encrypted data to a file in app's internal storage
-    final encryptedFilePath = '${mediaDir.path}/$id.enc';
-    final encryptedFile = File(encryptedFilePath);
-    await encryptedFile.writeAsBytes(base64Decode(encryptedBytes));
+    await _mediaStore.write(id, base64Decode(encryptedBytes));
 
-    print(
-      '✓ Media saved to: $encryptedFilePath (${bytes.length} bytes → ${(await encryptedFile.length())} encrypted bytes)',
-    );
+    AppLogger.d('Media saved id=$id size=${bytes.length}');
 
-    // Generate and save thumbnail for videos
     String? thumbnailPath;
     if (mediaType == MediaType.video) {
       thumbnailPath = await _generateAndSaveVideoThumbnail(
@@ -198,16 +189,15 @@ class MediaService {
     return MediaAttachment(
       id: id,
       fileName: fileName,
-      encryptedData: id, // Store ID instead of full encrypted data
+      encryptedData: id,
       mediaTypeIndex: mediaType.index,
       fileSize: bytes.length,
       mimeType: mimeType,
       createdAt: DateTime.now(),
-      thumbnailData: thumbnailPath, // Store thumbnail file ID
+      thumbnailData: thumbnailPath,
     );
   }
 
-  /// Generate and save an encrypted thumbnail for a video
   static Future<String?> _generateAndSaveVideoThumbnail(
     String videoPath,
     String mediaId,
@@ -223,64 +213,36 @@ class MediaService {
 
       if (thumbnailBytes == null) return null;
 
-      // Encrypt thumbnail
       final encryptedThumbData = await CryptoService.encryptBytes(
         thumbnailBytes,
         password,
       );
 
-      // Save thumbnail to file
-      final mediaDir = await _getMediaDirectory();
       final thumbnailId = '${mediaId}_thumb';
-      final thumbnailPath = '${mediaDir.path}/$thumbnailId.enc';
-      final thumbnailFile = File(thumbnailPath);
-      await thumbnailFile.writeAsBytes(base64Decode(encryptedThumbData));
-
-      print('✓ Thumbnail saved to: $thumbnailPath');
+      await _mediaStore.write(thumbnailId, base64Decode(encryptedThumbData));
       return thumbnailId;
     } catch (e) {
-      print('Error generating video thumbnail: $e');
+      AppLogger.e('Error generating video thumbnail', e);
       return null;
     }
   }
 
-  /// Decrypt media data from file
   static Future<Uint8List> decryptMedia(
     MediaAttachment media,
     String password,
   ) async {
     try {
-      final mediaDir = await _getMediaDirectory();
-      final encryptedFilePath = '${mediaDir.path}/${media.encryptedData}.enc';
-      final encryptedFile = File(encryptedFilePath);
-
-      if (!await encryptedFile.exists()) {
-        throw Exception('Media file not found: $encryptedFilePath');
-      }
-
-      // Read encrypted bytes from file
-      final encryptedBytes = await encryptedFile.readAsBytes();
-
-      // Convert to base64 for decryption
-      final base64Data = base64Encode(encryptedBytes);
-
-      // Decrypt
-      final decryptedBytes = await CryptoService.decryptBytes(
-        base64Data,
+      final decryptedBytes = await _mediaStore.readDecrypted(
+        media.encryptedData,
         password,
-      );
-
-      print(
-        '✓ Media decrypted: ${media.fileName} (${decryptedBytes.length} bytes)',
       );
       return decryptedBytes;
     } catch (e) {
-      print('✗ Error decrypting media: $e');
+      AppLogger.e('Error decrypting media', e);
       rethrow;
     }
   }
 
-  /// Decrypt thumbnail data from file
   static Future<Uint8List?> decryptThumbnail(
     String? thumbnailId,
     String password,
@@ -288,56 +250,26 @@ class MediaService {
     if (thumbnailId == null) return null;
 
     try {
-      final mediaDir = await _getMediaDirectory();
-      final thumbnailPath = '${mediaDir.path}/$thumbnailId.enc';
-      final thumbnailFile = File(thumbnailPath);
-
-      if (!await thumbnailFile.exists()) {
-        print('⚠ Thumbnail file not found: $thumbnailPath');
-        return null;
-      }
-
-      // Read and decrypt
-      final encryptedBytes = await thumbnailFile.readAsBytes();
-      final base64Data = base64Encode(encryptedBytes);
-      return await CryptoService.decryptBytes(base64Data, password);
+      return await _mediaStore.readDecryptedThumbnail(thumbnailId, password);
     } catch (e) {
-      print('✗ Error decrypting thumbnail: $e');
+      AppLogger.e('Error decrypting thumbnail', e);
       return null;
     }
   }
 
-  /// Delete media file
   static Future<void> deleteMedia(MediaAttachment media) async {
     try {
-      final mediaDir = await _getMediaDirectory();
-
-      // Delete main media file
-      final mediaFile = File('${mediaDir.path}/${media.encryptedData}.enc');
-      if (await mediaFile.exists()) {
-        await mediaFile.delete();
-        print('✓ Deleted media file: ${media.fileName}');
-      }
-
-      // Delete thumbnail if exists
-      if (media.thumbnailData != null) {
-        final thumbFile = File('${mediaDir.path}/${media.thumbnailData}.enc');
-        if (await thumbFile.exists()) {
-          await thumbFile.delete();
-          print('✓ Deleted thumbnail file');
-        }
-      }
+      await _mediaStore.delete(media);
     } catch (e) {
-      print('✗ Error deleting media: $e');
+      AppLogger.e('Error deleting media', e);
     }
   }
 
-  /// Clean up orphaned media files (files not referenced by any note)
   static Future<void> cleanupOrphanedMedia(List<String> referencedIds) async {
     try {
       final mediaDir = await _getMediaDirectory();
       final files = await mediaDir.list().toList();
-      int deletedCount = 0;
+      var deletedCount = 0;
 
       for (final file in files) {
         if (file is File && file.path.endsWith('.enc')) {
@@ -347,84 +279,83 @@ class MediaService {
           if (!referencedIds.contains(baseId)) {
             await file.delete();
             deletedCount++;
-            print('✓ Cleaned up orphaned file: ${path.basename(file.path)}');
           }
         }
       }
 
       if (deletedCount > 0) {
-        print('✓ Cleanup complete: $deletedCount orphaned files removed');
+        AppLogger.d('Cleanup removed $deletedCount orphaned media files');
       }
     } catch (e) {
-      print('✗ Error during cleanup: $e');
+      AppLogger.e('Error during media cleanup', e);
     }
   }
 
-  /// Get icon for file type
   static String getFileIcon(String? mimeType) {
     if (mimeType == null) return '📄';
-
     if (mimeType.startsWith('image/')) return '🖼️';
     if (mimeType.startsWith('video/')) return '🎥';
     if (mimeType.startsWith('audio/')) return '🎵';
     if (mimeType.contains('pdf')) return '📕';
     if (mimeType.contains('word') || mimeType.contains('document')) return '📘';
-    if (mimeType.contains('excel') || mimeType.contains('spreadsheet'))
+    if (mimeType.contains('excel') || mimeType.contains('spreadsheet')) {
       return '📊';
-    if (mimeType.contains('powerpoint') || mimeType.contains('presentation'))
+    }
+    if (mimeType.contains('powerpoint') || mimeType.contains('presentation')) {
       return '📙';
-    if (mimeType.contains('zip') || mimeType.contains('compressed'))
+    }
+    if (mimeType.contains('zip') || mimeType.contains('compressed')) {
       return '📦';
+    }
     if (mimeType.contains('text')) return '📝';
-
     return '📄';
   }
 
-  /// Open file with native iOS/Android preview
-  /// Decrypts the file and saves it to a temporary location, then opens it with native viewer
+  /// Decrypt to a random-named temp file under a dedicated preview dir, open
+  /// native viewer, then schedule cleanup. External apps may still copy data
+  /// while the URI is granted — treat as intentional disclosure.
   static Future<bool> openFileWithNativePreview(
     MediaAttachment media,
     String password,
   ) async {
     final lifecycleService = AppLifecycleService();
+    File? tempFile;
     try {
-      // Set flag to prevent auto-lock during file preview
       lifecycleService.startFilePreviewing();
 
-      // Check if native preview is available (iOS or Android)
       if (!FilePreviewService.isAvailable) {
-        print('⚠ Native file preview not available on this platform');
         return false;
       }
 
-      // Decrypt the file
       final decryptedBytes = await decryptMedia(media, password);
+      final previewDir = await _previewDirectory();
 
-      // Get temporary directory
-      final tempDir = await getTemporaryDirectory();
-      final tempFilePath = '${tempDir.path}/${media.fileName}';
+      final safeExt = path.extension(media.fileName);
+      final randomName = '${_uuid.v4()}$safeExt';
+      final tempFilePath = '${previewDir.path}/$randomName';
 
-      // Save decrypted file to temporary location
-      final tempFile = File(tempFilePath);
-      await tempFile.writeAsBytes(decryptedBytes);
+      tempFile = File(tempFilePath);
+      await tempFile.writeAsBytes(decryptedBytes, flush: true);
 
-      print('✓ Temporary file created: $tempFilePath');
-
-      // Use native preview service
       final success = await FilePreviewService.previewFile(tempFilePath);
-
-      if (success) {
-        print('✓ File opened successfully with native preview');
-      } else {
-        print('⚠ Failed to open file with native preview');
-      }
-
       return success;
     } catch (e) {
-      print('✗ Error opening file with native preview: $e');
+      AppLogger.e('Error opening file with native preview', e);
       return false;
     } finally {
-      // Always reset flag, even if there's an error
+      // Best-effort delete after handoff; OS may still hold the FD briefly.
+      try {
+        if (tempFile != null && await tempFile.exists()) {
+          // Delay slightly so the viewer can open the file first.
+          Future<void>.delayed(const Duration(seconds: 30), () async {
+            try {
+              if (await tempFile!.exists()) {
+                await tempFile.delete();
+              }
+            } catch (_) {}
+          });
+        }
+      } catch (_) {}
       lifecycleService.endFilePreviewing();
     }
   }

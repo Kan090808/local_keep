@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +6,7 @@ import 'package:local_keep/models/media_attachment.dart';
 import 'package:local_keep/providers/note_provider.dart';
 import 'package:local_keep/services/hive_database_service.dart';
 import 'package:local_keep/services/media_service.dart';
+import 'package:local_keep/services/note_draft.dart';
 import 'package:local_keep/widgets/media_gallery_widget.dart';
 
 class NoteEditorScreen extends StatefulWidget {
@@ -21,18 +21,17 @@ class NoteEditorScreen extends StatefulWidget {
 class _NoteEditorScreenState extends State<NoteEditorScreen> {
   final _contentController = TextEditingController();
   final _focusNode = FocusNode();
+  late final NoteDraft _draft;
   bool _isEdited = false;
   bool _isSaving = false;
-  String _lastSavedContent = '';
-  Timer? _saveTimer;
   List<MediaAttachment> _mediaAttachments = [];
 
   @override
   void initState() {
     super.initState();
+    _draft = NoteDraft(widget.note?.content ?? '');
     if (widget.note != null) {
       _contentController.text = widget.note!.content;
-      _lastSavedContent = widget.note!.content;
       _mediaAttachments = List.from(widget.note!.mediaAttachments);
     } else {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -45,7 +44,6 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   void dispose() {
     _contentController.dispose();
     _focusNode.dispose();
-    _saveTimer?.cancel();
     super.dispose();
   }
 
@@ -101,6 +99,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           _isEdited = false;
           _isSaving = false;
         });
+        _draft.updateContent(content);
+        _draft.markSaved();
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -361,21 +361,15 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                             minLines: 5,
                             keyboardType: TextInputType.multiline,
                             onChanged: (value) {
-                              final contentLength = value.length;
-                              final lastSavedLength = _lastSavedContent.length;
-                              final hasSignificantChange =
-                                  (lastSavedLength - contentLength).abs() > 3;
-                              final crossedWordBoundary =
-                                  (contentLength ~/ 20) !=
-                                  (lastSavedLength ~/ 20);
+                              final hasSignificantChange = _draft
+                                  .shouldAutosave(value);
+                              _draft.updateContent(value);
 
-                              if (!_isEdited && (value != _lastSavedContent)) {
+                              if (!_isEdited && _draft.isDirty) {
                                 setState(() => _isEdited = true);
                               }
 
-                              if (widget.note != null &&
-                                  (hasSignificantChange ||
-                                      crossedWordBoundary)) {
+                              if (widget.note != null && hasSignificantChange) {
                                 final noteProvider = Provider.of<NoteProvider>(
                                   context,
                                   listen: false,
@@ -385,7 +379,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                   value,
                                   mediaAttachments: _mediaAttachments,
                                 );
-                                _lastSavedContent = value;
+                                _draft.markSaved();
                               }
                             },
                           ),

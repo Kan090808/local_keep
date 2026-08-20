@@ -1,84 +1,109 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:local_keep/services/app_logger.dart';
 import 'package:local_keep/services/crypto_service.dart';
 import 'package:local_keep/services/hive_database_service.dart';
+import 'package:local_keep/services/media_service.dart';
 
 class AuthProvider with ChangeNotifier {
   bool _isAuthenticated = false;
 
   bool get isAuthenticated => _isAuthenticated;
 
-  // Check if the app has been initialized with a password
   Future<bool> isAppInitialized() async {
-    return await CryptoService.isPasswordSetup();
+    return CryptoService.isPasswordSetup();
   }
 
-  // Create a new password (first time setup)
   Future<bool> createPassword(String password) async {
     try {
       await CryptoService.setupPassword(password);
+      await HiveDatabaseService.ensureOpen(password);
       _isAuthenticated = true;
-      HiveDatabaseService.setPassword(password);
       notifyListeners();
       return true;
     } catch (e) {
+      AppLogger.e('createPassword failed', e);
       return false;
     }
   }
 
-  // Verify existing password
   Future<bool> verifyPassword(String password) async {
-    final isValid = await CryptoService.verifyPassword(password);
-    if (isValid) {
+    try {
+      if (!await CryptoService.verifyPassword(password)) return false;
+      await HiveDatabaseService.ensureOpen(password);
       _isAuthenticated = true;
-      HiveDatabaseService.setPassword(password);
       notifyListeners();
+      return true;
+    } catch (e) {
+      AppLogger.e('verifyPassword failed', e);
+      _isAuthenticated = false;
+      await HiveDatabaseService.close();
+      notifyListeners();
+      return false;
     }
-    return isValid;
   }
 
-  // Delete all notes from the database
   Future<void> deleteAllNotes() async {
     try {
       await HiveDatabaseService.clearNotes();
+      await MediaService.clearAllMedia();
       notifyListeners();
     } catch (e) {
-      print('Error deleting all notes: $e');
-      // If clearNotes fails due to corrupted DB, try resetting
-      if (e.toString().contains('unknown typeid') ||
-          e.toString().contains('type id')) {
-        print('Attempting database reset due to corruption...');
-        await HiveDatabaseService.resetDatabase();
-      }
+      AppLogger.e('Error deleting all notes', e);
+      rethrow;
     }
   }
 
-  // Change password
   Future<bool> changePassword(String oldPassword, String newPassword) async {
     try {
       final isValid = await CryptoService.verifyPassword(oldPassword);
       if (!isValid) return false;
 
-      await HiveDatabaseService.reEncryptNotes(oldPassword, newPassword);
+      // Re-encrypt media first (while still able to decrypt with old password).
+      final media = await MediaService.snapshotEncryptedMedia();
+      final reEncryptedMedia = <String, Uint8List>{};
+      for (final entry in media.entries) {
+        final plain = await CryptoService.decryptBytes(
+          base64Encode(entry.value),
+          oldPassword,
+        );
+        reEncryptedMedia[entry.key] = base64Decode(
+          await CryptoService.encryptBytes(plain, newPassword),
+        );
+      }
+
+      // Notes + hive re-key.
+      await HiveDatabaseService.reEncryptAll(oldPassword, newPassword);
+
+      // Persist media under new key.
+      await MediaService.replaceAllEncryptedMedia(reEncryptedMedia);
+
       await CryptoService.setupPassword(newPassword);
 
+      await HiveDatabaseService.ensureOpen(newPassword);
       _isAuthenticated = true;
-      HiveDatabaseService.setPassword(newPassword);
       notifyListeners();
       return true;
     } catch (e) {
-      print('Error changing password: $e');
+      AppLogger.e('Error changing password', e);
       return false;
     }
   }
 
-  // Lock the app
-  void lockApp() {
+  /// Lock app: clear auth flag, close DB, wipe in-memory password.
+  Future<void> lockApp() async {
     _isAuthenticated = false;
+    await clearSensitiveData();
     notifyListeners();
   }
 
-  // Clear sensitive data from memory
-  void clearSensitiveData() {
-    // Simple cleanup
+  Future<void> clearSensitiveData() async {
+    try {
+      await MediaService.cleanupPreviewTempFiles();
+    } catch (e) {
+      AppLogger.e('Preview cleanup on lock failed', e);
+    }
+    await HiveDatabaseService.close();
   }
 }

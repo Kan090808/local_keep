@@ -1,19 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
-import 'package:encrypt/encrypt.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:local_keep/models/note.dart';
+import 'package:local_keep/services/app_logger.dart';
 import 'package:local_keep/services/crypto_service.dart';
 import 'package:local_keep/services/hive_database_service.dart';
 import 'package:local_keep/services/media_service.dart';
 import 'package:path_provider/path_provider.dart';
 
 class BackupService {
-  static const int _backupVersion = 1;
+  /// Current export format (authenticated envelope + metadata).
+  static const int backupVersionV2 = 2;
+
   static const String _backupExtension = 'lkeep';
 
   static List<String> get backupExtensions => <String>[_backupExtension];
@@ -23,11 +23,10 @@ class BackupService {
     return lowerName.endsWith('.$_backupExtension');
   }
 
-  /// Export all notes and encrypted media into a password-protected backup file.
-  ///
-  /// Returns the saved file path when successful or `null` when the user cancels.
+  /// Export notes + media as a password-protected v2 backup.
   static Future<String?> exportEncryptedBackup(String password) async {
     await HiveDatabaseService.initialize();
+    await HiveDatabaseService.ensureOpen(password);
 
     final rawNotes = await HiveDatabaseService.getNotesRaw();
     final saltMetadata = await CryptoService.exportCryptoMetadata();
@@ -39,7 +38,6 @@ class BackupService {
       );
     }
 
-    // Collect notes and media references
     final notesPayload = rawNotes.map((note) => note.toMap()).toList();
     final mediaIds = <String>{};
 
@@ -52,7 +50,6 @@ class BackupService {
       }
     }
 
-    // Read encrypted media bytes
     final mediaPayload = <String, String>{};
     for (final mediaId in mediaIds) {
       final encryptedBytes = await MediaService.readEncryptedMediaFile(mediaId);
@@ -62,7 +59,7 @@ class BackupService {
     }
 
     final backupContent = <String, dynamic>{
-      'version': _backupVersion,
+      'version': backupVersionV2,
       'created_at': DateTime.now().toIso8601String(),
       'note_count': notesPayload.length,
       'media_count': mediaPayload.length,
@@ -70,14 +67,19 @@ class BackupService {
       'media': mediaPayload,
     };
 
+    // Fail if any note content cannot be authenticated/decrypted later by using
+    // v2 encrypt for the outer envelope (always authenticated).
     final encryptedContent = await CryptoService.encrypt(
       jsonEncode(backupContent),
       password,
     );
 
     final wrapper = <String, dynamic>{
-      'version': _backupVersion,
+      'version': backupVersionV2,
       'salt': salt,
+      'kdf_iterations':
+          saltMetadata['kdf_iterations'] ??
+          CryptoService.v2Iterations.toString(),
       'payload': encryptedContent,
     };
 
@@ -97,7 +99,6 @@ class BackupService {
         bytes: backupBytes,
       );
 
-      // Platform may not support saveFile; fall back to application documents dir.
       if (savedPath == null) {
         return null;
       }
@@ -112,93 +113,64 @@ class BackupService {
     }
   }
 
-  /// Import notes and encrypted media from a backup file during first-time setup.
-  ///
-  /// This method is used when no password has been set yet.
-  /// The [restorePassword] is used to decrypt the backup file and will become the app password.
-  /// Returns the number of notes restored.
+  /// First-time restore (no existing password).
   static Future<int> importEncryptedBackupFirstTime({
     required Uint8List fileBytes,
     required String restorePassword,
   }) async {
     await HiveDatabaseService.initialize();
 
-    final decoded = jsonDecode(utf8.decode(fileBytes));
-    if (decoded is! Map<String, dynamic>) {
-      throw FormatException('Invalid backup format.');
-    }
+    final parsed = _parseBackupWrapper(fileBytes);
+    final salt = parsed.salt;
+    final payload = parsed.payload;
+    final iterations = parsed.kdfIterations;
 
-    final backupVersion = decoded['version'] as int?;
-    if (backupVersion != _backupVersion) {
-      throw FormatException('Unsupported backup version: $backupVersion');
-    }
-
-    final salt = decoded['salt'] as String?;
-    final payload = decoded['payload'] as String?;
-    if (salt == null || payload == null) {
-      throw FormatException('Incomplete backup payload.');
-    }
-
-    // Decrypt the backup using the restore password and backup salt
-    final decryptedJson = await CryptoService.decryptWithSalt(
+    final decryptedJson = CryptoService.decryptWithSaltV2(
       payload,
       restorePassword,
       salt,
+      iterations: iterations,
     );
 
-    final payloadMap = jsonDecode(decryptedJson);
-    if (payloadMap is! Map<String, dynamic>) {
-      throw FormatException('Invalid backup payload content.');
-    }
+    final payloadMap = _decodePayloadMap(decryptedJson);
+    final restoredNotes = _parseNotes(payloadMap['notes']);
+    final mediaData = _requireMediaMap(payloadMap['media']);
 
-    final notesData = payloadMap['notes'];
-    final mediaData = payloadMap['media'];
+    // Validate every note/media can be decrypted before mutating storage.
+    await _validateBackupContents(
+      notes: restoredNotes,
+      mediaData: mediaData,
+      password: restorePassword,
+      salt: salt,
+      iterations: iterations,
+    );
 
-    if (notesData is! List) {
-      throw FormatException('Missing notes in backup payload.');
-    }
-    if (mediaData is! Map<String, dynamic>) {
-      throw FormatException('Missing media in backup payload.');
-    }
-
-    // Parse the notes (they're already in the correct format from the backup)
-    final restoredNotes = <Note>[];
-    for (final item in notesData) {
-      if (item is Map<String, dynamic>) {
-        restoredNotes.add(Note.fromMap(item));
-      } else if (item is Map) {
-        restoredNotes.add(Note.fromMap(Map<String, dynamic>.from(item)));
-      }
-    }
-
-    // Setup password with the backup's salt
-    await CryptoService.importCryptoMetadata(saltBase64: salt);
-    await CryptoService.setupPassword(restorePassword);
-    HiveDatabaseService.setPassword(restorePassword);
-
-    // Save all notes directly (they're already encrypted with the correct key)
-    await HiveDatabaseService.replaceAllNotesRaw(restoredNotes);
-
-    // Handle media files (they're already encrypted with the correct key)
-    await MediaService.clearAllMedia();
+    final restoredMedia = <String, Uint8List>{};
     for (final entry in mediaData.entries) {
-      final mediaId = entry.key;
       final value = entry.value;
-      if (value is String) {
-        final encryptedBytes = base64.decode(value);
-        // Write encrypted bytes directly since they match the imported salt
-        await MediaService.writeEncryptedMediaFile(mediaId, encryptedBytes);
+      if (value is! String) {
+        throw FormatException('Invalid media entry for ${entry.key}.');
       }
+      restoredMedia[entry.key] = base64.decode(value);
     }
+
+    // Import salt first so hive open / encrypt paths have consistent material.
+    await CryptoService.importCryptoMetadata(
+      saltBase64: salt,
+      kdfIterations: iterations,
+    );
+
+    await CryptoService.setupPassword(restorePassword);
+    await HiveDatabaseService.ensureOpen(restorePassword);
+
+    await HiveDatabaseService.replaceAllNotesRaw(restoredNotes);
+    await MediaService.replaceAllEncryptedMedia(restoredMedia);
 
     return restoredNotes.length;
   }
 
-  /// Import notes and encrypted media from a previously exported backup file.
-  ///
-  /// The [restorePassword] is used to decrypt the backup file.
-  /// The [currentPassword] is used to re-encrypt the notes with the existing app password.
-  /// Returns the number of notes restored.
+  /// Restore into an existing install.
+  /// Decrypt failures abort — never treat ciphertext as plaintext.
   static Future<int> importEncryptedBackup({
     required Uint8List fileBytes,
     required String restorePassword,
@@ -206,80 +178,54 @@ class BackupService {
   }) async {
     await HiveDatabaseService.initialize();
 
-    final decoded = jsonDecode(utf8.decode(fileBytes));
-    if (decoded is! Map<String, dynamic>) {
-      throw FormatException('Invalid backup format.');
-    }
+    final parsed = _parseBackupWrapper(fileBytes);
+    final salt = parsed.salt;
+    final payload = parsed.payload;
+    final iterations = parsed.kdfIterations;
 
-    final backupVersion = decoded['version'] as int?;
-    if (backupVersion != _backupVersion) {
-      throw FormatException('Unsupported backup version: $backupVersion');
-    }
-
-    final salt = decoded['salt'] as String?;
-    final payload = decoded['payload'] as String?;
-    if (salt == null || payload == null) {
-      throw FormatException('Incomplete backup payload.');
-    }
-
-    // Step 1: Decrypt the backup using the restore password and backup salt
-    final decryptedJson = await CryptoService.decryptWithSalt(
+    final decryptedJson = CryptoService.decryptWithSaltV2(
       payload,
       restorePassword,
       salt,
+      iterations: iterations,
     );
 
-    final payloadMap = jsonDecode(decryptedJson);
-    if (payloadMap is! Map<String, dynamic>) {
-      throw FormatException('Invalid backup payload content.');
-    }
+    final payloadMap = _decodePayloadMap(decryptedJson);
+    final restoredNotes = _parseNotes(payloadMap['notes']);
+    final mediaData = _requireMediaMap(payloadMap['media']);
 
-    final notesData = payloadMap['notes'];
-    final mediaData = payloadMap['media'];
+    await _validateBackupContents(
+      notes: restoredNotes,
+      mediaData: mediaData,
+      password: restorePassword,
+      salt: salt,
+      iterations: iterations,
+    );
 
-    if (notesData is! List) {
-      throw FormatException('Missing notes in backup payload.');
+    final currentMeta = await CryptoService.exportCryptoMetadata();
+    final currentSalt = currentMeta['salt'] ?? '';
+    if (currentSalt.isEmpty) {
+      throw Exception('Current encryption salt not found.');
     }
-    if (mediaData is! Map<String, dynamic>) {
-      throw FormatException('Missing media in backup payload.');
-    }
+    final currentIterations = await CryptoService.getKdfIterations();
 
-    // Step 2: Parse the decrypted notes
-    final restoredNotes = <Note>[];
-    for (final item in notesData) {
-      if (item is Map<String, dynamic>) {
-        restoredNotes.add(Note.fromMap(item));
-      } else if (item is Map) {
-        restoredNotes.add(Note.fromMap(Map<String, dynamic>.from(item)));
-      }
-    }
-
-    // Step 3: Decrypt note content with restore password, then re-encrypt with current password
     final reEncryptedNotes = <Note>[];
     for (final note in restoredNotes) {
-      String decryptedContent = note.content;
+      final plain =
+          note.content.isEmpty
+              ? ''
+              : CryptoService.decryptWithSaltV2(
+                note.content,
+                restorePassword,
+                salt,
+                iterations: iterations,
+              );
 
-      if (note.content.isNotEmpty) {
-        try {
-          // Decrypt with restore password using backup salt
-          decryptedContent = await CryptoService.decryptWithSalt(
-            note.content,
-            restorePassword,
-            salt,
-          );
-        } catch (e) {
-          // If decryption fails, content might not be encrypted
-          decryptedContent = note.content;
-        }
-      }
+      final reEncryptedContent =
+          plain.isEmpty
+              ? ''
+              : await CryptoService.encrypt(plain, currentPassword);
 
-      // Re-encrypt with current password using current salt
-      final reEncryptedContent = await CryptoService.encrypt(
-        decryptedContent,
-        currentPassword,
-      );
-
-      // Create new note with re-encrypted data
       reEncryptedNotes.add(
         Note(
           id: note.id,
@@ -292,119 +238,165 @@ class BackupService {
       );
     }
 
-    // Step 4: Set the current password for database operations
-    HiveDatabaseService.setPassword(currentPassword);
-
-    // Step 5: Replace all notes with re-encrypted versions
-    await HiveDatabaseService.replaceAllNotesRaw(reEncryptedNotes);
-
-    // Step 6: Handle media files - decrypt with restore password, re-encrypt with current password
-    await MediaService.clearAllMedia();
+    final reEncryptedMedia = <String, Uint8List>{};
     for (final entry in mediaData.entries) {
-      final mediaId = entry.key;
       final value = entry.value;
-      if (value is String) {
-        final encryptedBytes = base64.decode(value);
-
-        // Decrypt media bytes with restore password using backup salt
-        final decryptedMedia = await _decryptMediaBytesWithSalt(
-          encryptedBytes,
-          restorePassword,
-          salt,
-        );
-
-        // Re-encrypt with current password using current salt
-        final reEncryptedBytes = await _encryptMediaBytes(
-          decryptedMedia,
-          currentPassword,
-        );
-
-        // Write back with same mediaId to maintain references
-        await MediaService.writeEncryptedMediaFile(mediaId, reEncryptedBytes);
+      if (value is! String) {
+        throw FormatException('Invalid media entry for ${entry.key}.');
       }
+      final decryptedMedia = CryptoService.decryptBytesWithSalt(
+        base64.decode(value),
+        restorePassword,
+        salt,
+        iterations: iterations,
+      );
+      reEncryptedMedia[entry.key] = CryptoService.encryptBytesWithSalt(
+        decryptedMedia,
+        currentPassword,
+        currentSalt,
+        iterations: currentIterations,
+      );
+    }
+
+    await HiveDatabaseService.ensureOpen(currentPassword);
+
+    final oldNotes = await HiveDatabaseService.getNotesRaw();
+    final oldMedia = await MediaService.snapshotEncryptedMedia();
+    try {
+      await HiveDatabaseService.replaceAllNotesRaw(reEncryptedNotes);
+      await MediaService.replaceAllEncryptedMedia(reEncryptedMedia);
+    } catch (error) {
+      AppLogger.e('Backup restore failed; rolling back', error);
+      await HiveDatabaseService.replaceAllNotesRaw(oldNotes);
+      await MediaService.replaceAllEncryptedMedia(oldMedia);
+      rethrow;
     }
 
     return restoredNotes.length;
   }
 
-  static Future<Directory> _fallbackDirectory() async {
-    return await getApplicationDocumentsDirectory();
-  }
+  // ---------------------------------------------------------------------------
+  // Parsing / validation helpers
+  // ---------------------------------------------------------------------------
 
-  /// Decrypt media bytes using a specific salt (for backup restore)
-  static Future<Uint8List> _decryptMediaBytesWithSalt(
-    Uint8List encryptedBytes,
-    String password,
-    String saltBase64,
-  ) async {
-    if (encryptedBytes.isEmpty) return Uint8List(0);
+  static _BackupWrapper _parseBackupWrapper(Uint8List fileBytes) {
+    final decoded = jsonDecode(utf8.decode(fileBytes));
+    if (decoded is! Map) {
+      throw const FormatException('Invalid backup format.');
+    }
+    final map = Map<String, dynamic>.from(decoded);
 
-    // Decrypt using the same logic as CryptoService but with provided salt
-    final salt = base64.decode(saltBase64);
-    final key = _deriveKeyFromPassword(password, salt);
-
-    final iv = encryptedBytes.sublist(0, 16);
-    final encryptedData = encryptedBytes.sublist(16);
-
-    final encrypter = Encrypter(AES(Key(key)));
-    final encrypted = Encrypted(encryptedData);
-    final decryptedList = encrypter.decryptBytes(encrypted, iv: IV(iv));
-    return Uint8List.fromList(decryptedList);
-  }
-
-  /// Encrypt media bytes with current password
-  static Future<Uint8List> _encryptMediaBytes(
-    Uint8List data,
-    String password,
-  ) async {
-    if (data.isEmpty) return Uint8List(0);
-
-    // Get current salt from CryptoService
-    final saltMetadata = await CryptoService.exportCryptoMetadata();
-    final saltBase64 = saltMetadata['salt'] ?? '';
-    if (saltBase64.isEmpty) {
-      throw Exception('Current encryption salt not found.');
+    final backupVersion = map['version'] as int?;
+    if (backupVersion != backupVersionV2) {
+      throw FormatException('Unsupported backup version: $backupVersion');
     }
 
-    final salt = base64.decode(saltBase64);
-    final iv = _generateRandomBytes(16);
-    final key = _deriveKeyFromPassword(password, salt);
+    final salt = map['salt'] as String?;
+    final payload = map['payload'] as String?;
+    if (salt == null || salt.isEmpty || payload == null || payload.isEmpty) {
+      throw const FormatException('Incomplete backup payload.');
+    }
 
-    final encrypter = Encrypter(AES(Key(key)));
-    final encrypted = encrypter.encryptBytes(data, iv: IV(iv));
+    final iterationsRaw = map['kdf_iterations']?.toString();
+    final iterations =
+        int.tryParse(iterationsRaw ?? '') ?? CryptoService.v2Iterations;
 
-    final combined = iv + encrypted.bytes;
-    return Uint8List.fromList(combined);
+    return _BackupWrapper(
+      salt: salt,
+      payload: payload,
+      kdfIterations: iterations,
+    );
   }
 
-  /// Derive key from password (same as CryptoService)
-  static Uint8List _deriveKeyFromPassword(String password, Uint8List salt) {
-    const iterations = 10000;
-    const keyLength = 32;
+  static Map<String, dynamic> _decodePayloadMap(String decryptedJson) {
+    final payloadMap = jsonDecode(decryptedJson);
+    if (payloadMap is! Map) {
+      throw const FormatException('Invalid backup payload content.');
+    }
+    return Map<String, dynamic>.from(payloadMap);
+  }
 
-    List<int> passwordBytes = utf8.encode(password);
-    var hmac = Hmac(sha256, passwordBytes);
-    var key = List<int>.filled(keyLength, 0);
-    var result = List<int>.from(salt);
+  static List<Note> _parseNotes(Object? notesData) {
+    if (notesData is! List) {
+      throw const FormatException('Missing notes in backup payload.');
+    }
+    final restoredNotes = <Note>[];
+    for (final item in notesData) {
+      if (item is Map<String, dynamic>) {
+        restoredNotes.add(Note.fromMap(item));
+      } else if (item is Map) {
+        restoredNotes.add(Note.fromMap(Map<String, dynamic>.from(item)));
+      } else {
+        throw const FormatException('Invalid note entry in backup.');
+      }
+    }
+    return restoredNotes;
+  }
 
-    for (var i = 0; i < iterations; i++) {
-      var hmacInput = List<int>.from(result);
-      var mac = hmac.convert(hmacInput);
-      result = mac.bytes;
+  static Map<String, dynamic> _requireMediaMap(Object? mediaData) {
+    if (mediaData is! Map) {
+      throw const FormatException('Missing media in backup payload.');
+    }
+    return Map<String, dynamic>.from(mediaData);
+  }
 
-      for (var j = 0; j < keyLength; j++) {
-        key[j] ^= result[j % result.length];
+  /// Decrypt every note and media object; throw on any failure (fail-closed).
+  static Future<void> _validateBackupContents({
+    required List<Note> notes,
+    required Map<String, dynamic> mediaData,
+    required String password,
+    required String salt,
+    required int iterations,
+  }) async {
+    for (final note in notes) {
+      if (note.content.isEmpty) continue;
+      try {
+        CryptoService.decryptWithSaltV2(
+          note.content,
+          password,
+          salt,
+          iterations: iterations,
+        );
+      } catch (e) {
+        throw FormatException(
+          'Backup note ${note.id ?? "(unknown)"} failed authentication/decryption.',
+        );
       }
     }
 
-    return Uint8List.fromList(key);
+    for (final entry in mediaData.entries) {
+      final value = entry.value;
+      if (value is! String) {
+        throw FormatException('Invalid media entry for ${entry.key}.');
+      }
+      try {
+        CryptoService.decryptBytesWithSalt(
+          base64.decode(value),
+          password,
+          salt,
+          iterations: iterations,
+        );
+      } catch (e) {
+        throw FormatException(
+          'Backup media ${entry.key} failed authentication/decryption.',
+        );
+      }
+    }
   }
 
-  /// Generate random bytes for IV
-  static Uint8List _generateRandomBytes(int length) {
-    final random = Random.secure();
-    return Uint8List.fromList(
-      List<int>.generate(length, (_) => random.nextInt(256)),
-    );
+  static Future<Directory> _fallbackDirectory() async {
+    return getApplicationDocumentsDirectory();
   }
+}
+
+class _BackupWrapper {
+  final String salt;
+  final String payload;
+  final int kdfIterations;
+
+  _BackupWrapper({
+    required this.salt,
+    required this.payload,
+    required this.kdfIterations,
+  });
 }

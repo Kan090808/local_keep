@@ -4,8 +4,11 @@ import 'package:local_keep/providers/auth_provider.dart';
 import 'package:local_keep/screens/welcome_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:local_keep/screens/change_password_screen.dart';
+import 'package:local_keep/services/app_logger.dart';
 import 'package:local_keep/services/backup_service.dart';
 import 'package:local_keep/services/crypto_service.dart';
+import 'package:local_keep/services/hive_database_service.dart';
+import 'package:local_keep/services/media_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -31,7 +34,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text('Could not launch $urlString')));
       }
-      print('Could not launch $urlString');
+      AppLogger.e('Could not launch $urlString');
     }
   }
 
@@ -111,7 +114,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     try {
       await authProvider.deleteAllNotes();
+      await MediaService.clearAllMedia();
+      await HiveDatabaseService.resetDatabase();
       await CryptoService.clearAll();
+      await authProvider.lockApp();
 
       if (context.mounted) {
         Navigator.of(
@@ -124,7 +130,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       }
     } catch (e) {
-      print('Error resetting data: $e');
+      AppLogger.e('Error resetting data', e);
       if (context.mounted) {
         Navigator.of(
           context,

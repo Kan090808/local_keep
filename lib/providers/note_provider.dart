@@ -1,11 +1,16 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
-import 'package:local_keep/models/note.dart';
 import 'package:local_keep/models/media_attachment.dart';
-import 'package:local_keep/services/hive_database_service.dart';
+import 'package:local_keep/models/note.dart';
+import 'package:local_keep/services/app_logger.dart';
 import 'package:local_keep/services/media_service.dart';
+import 'package:local_keep/services/note_store.dart';
 
 class NoteProvider with ChangeNotifier {
+  NoteProvider({NoteStore? store}) : _store = store ?? const HiveNoteStore();
+
+  final NoteStore _store;
   List<Note> _notes = [];
   bool _isLoading = false;
   Timer? _debounceTimer;
@@ -18,10 +23,9 @@ class NoteProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      _notes = await HiveDatabaseService.getNotes();
+      _notes = await _store.fetchNotes();
     } catch (e) {
-      print('Error fetching notes: $e');
-      _notes = [];
+      AppLogger.e('Error fetching notes', e);
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -33,22 +37,18 @@ class NoteProvider with ChangeNotifier {
     List<MediaAttachment>? mediaAttachments,
   }) async {
     try {
-      // Create new note
       final newNote = Note.create(
         content: content,
         mediaAttachments: mediaAttachments,
       );
 
-      // Save to database
-      final id = await HiveDatabaseService.insertNote(newNote);
-
-      // Add to local list
+      final id = await _store.insertNote(newNote);
       final finalNote = newNote.copyWith(id: id);
       _notes.insert(0, finalNote);
 
       notifyListeners();
     } catch (e) {
-      print('Error adding note: $e');
+      AppLogger.e('Error adding note', e);
       rethrow;
     }
   }
@@ -71,9 +71,9 @@ class NoteProvider with ChangeNotifier {
         notifyListeners();
       }
 
-      await HiveDatabaseService.updateNote(updatedNote);
+      await _store.updateNote(updatedNote);
     } catch (e) {
-      print('Error updating note: $e');
+      AppLogger.e('Error updating note', e);
       await fetchNotes();
       rethrow;
     }
@@ -98,23 +98,20 @@ class NoteProvider with ChangeNotifier {
 
     _debounceTimer?.cancel();
     _debounceTimer = Timer(const Duration(milliseconds: 500), () {
-      HiveDatabaseService.updateNote(updatedNote);
+      _store.updateNote(updatedNote);
     });
   }
 
   Future<void> deleteNote(String id) async {
-    // Find the note to get its media attachments
     final note = getNoteById(id);
 
-    // Delete associated media files
     if (note != null && note.mediaAttachments.isNotEmpty) {
       for (final media in note.mediaAttachments) {
         await MediaService.deleteMedia(media);
       }
     }
 
-    // Delete the note from database
-    await HiveDatabaseService.deleteNote(id);
+    await _store.deleteNote(id);
     _notes.removeWhere((note) => note.id == id);
     notifyListeners();
   }
@@ -129,7 +126,10 @@ class NoteProvider with ChangeNotifier {
 
   int get noteCount => _notes.length;
 
+  /// Drop plaintext notes from memory (called on app lock).
   void clearNotes() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
     _notes = [];
     notifyListeners();
   }

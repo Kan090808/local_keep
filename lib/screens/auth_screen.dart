@@ -80,7 +80,7 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'An error occurred: ${e.toString()}';
+          _errorMessage = 'An error occurred. Please try again.';
         });
       }
     } finally {

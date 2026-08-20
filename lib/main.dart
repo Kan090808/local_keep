@@ -1,12 +1,16 @@
 import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:local_keep/screens/auth_screen.dart';
-import 'package:local_keep/screens/welcome_screen.dart';
+
 import 'package:local_keep/providers/auth_provider.dart';
 import 'package:local_keep/providers/note_provider.dart';
-import 'package:local_keep/services/hive_database_service.dart';
+import 'package:local_keep/screens/auth_screen.dart';
+import 'package:local_keep/screens/welcome_screen.dart';
 import 'package:local_keep/services/app_lifecycle_service.dart';
+import 'package:local_keep/services/app_logger.dart';
+import 'package:local_keep/services/hive_database_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,8 +32,17 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final _lifecycleService = AppLifecycleService();
   Timer? _lockTimer;
 
-  // Lock app after 30 seconds of being in background
-  static const Duration _lockDelay = Duration(seconds: 30);
+  /// Mobile: lock immediately when backgrounded.
+  /// Desktop/web: short grace period for window switching.
+  Duration get _lockDelay {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+        return Duration.zero;
+      default:
+        return const Duration(seconds: 60);
+    }
+  }
 
   @override
   void initState() {
@@ -46,70 +59,79 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   Future<void> _triggerLock() async {
     final currentContext = navigatorKey.currentContext;
-    if (currentContext != null) {
-      final authProvider = Provider.of<AuthProvider>(
-        currentContext,
-        listen: false,
-      );
+    if (currentContext == null) return;
 
-      // Don't lock if currently picking or previewing a file
-      if (_lifecycleService.shouldSkipLock) {
-        if (_lifecycleService.isPickingFile) {
-          print('Skipping lock: File picking in progress');
-        }
-        if (_lifecycleService.isPreviewingFile) {
-          print('Skipping lock: File preview in progress');
-        }
-        return;
-      }
+    final authProvider = Provider.of<AuthProvider>(
+      currentContext,
+      listen: false,
+    );
+    final noteProvider = Provider.of<NoteProvider>(
+      currentContext,
+      listen: false,
+    );
 
-      // Only lock if a password has been set
-      final hasPassword = await authProvider.isAppInitialized();
-      if (!hasPassword) {
-        print('Skipping lock: No password set');
-        return; // Don't lock if no password is set
-      }
-
-      print('Locking app');
-      authProvider.lockApp();
-      navigatorKey.currentState?.pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const AuthScreen()),
-        (route) => false,
-      );
+    if (_lifecycleService.shouldSkipLock) {
+      AppLogger.d('Skipping lock: active file operation');
+      // Re-arm a short timer so a stuck flag cannot suppress lock forever.
+      _startLockTimer(overrideDelay: const Duration(seconds: 15));
+      return;
     }
+
+    if (!authProvider.isAuthenticated) {
+      return;
+    }
+
+    final hasPassword = await authProvider.isAppInitialized();
+    if (!hasPassword) {
+      return;
+    }
+
+    AppLogger.d('Locking app');
+    noteProvider.clearNotes();
+    await authProvider.lockApp();
+    navigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (route) => false,
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    AppLogger.d('App lifecycle: $state');
 
-    print('App lifecycle state changed to: $state');
-
-    if (state == AppLifecycleState.paused) {
-      // App went to background - start 30 second timer
-      _startLockTimer();
-    } else if (state == AppLifecycleState.resumed) {
-      // App came to foreground - cancel timer
-      _cancelLockTimer();
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.inactive:
+        // inactive also covers iOS app switcher snapshots — start lock path.
+        if (state == AppLifecycleState.inactive) {
+          // On mobile, inactive is noisy (keyboard, permission sheets).
+          // Only start lock timer for paused/hidden; inactive alone does not lock.
+          return;
+        }
+        _startLockTimer();
+        break;
+      case AppLifecycleState.resumed:
+        _cancelLockTimer();
+        break;
+      case AppLifecycleState.detached:
+        break;
     }
   }
 
-  void _startLockTimer() {
-    // Cancel any existing timer
+  void _startLockTimer({Duration? overrideDelay}) {
     _lockTimer?.cancel();
-
-    print('Starting lock timer (${_lockDelay.inSeconds} seconds)');
-
-    // Start new timer
-    _lockTimer = Timer(_lockDelay, () {
-      print('Lock timer expired - checking if should lock');
+    final delay = overrideDelay ?? _lockDelay;
+    AppLogger.d('Starting lock timer (${delay.inSeconds}s)');
+    _lockTimer = Timer(delay, () {
       _triggerLock();
     });
   }
 
   void _cancelLockTimer() {
     if (_lockTimer != null && _lockTimer!.isActive) {
-      print('Cancelling lock timer - app resumed');
+      AppLogger.d('Cancelling lock timer');
       _lockTimer?.cancel();
       _lockTimer = null;
     }
@@ -158,10 +180,8 @@ class AppEntryPoint extends StatelessWidget {
         }
 
         if (snapshot.data == true) {
-          // Password is already set up - go to unlock screen
           return const AuthScreen();
         } else {
-          // No password set up yet - show welcome screen
           return const WelcomeScreen();
         }
       },
